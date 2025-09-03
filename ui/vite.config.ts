@@ -9,5 +9,21 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'solid': ['solid-js'],
+        },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+      },
+    },
+    minify: 'esbuild',
+    sourcemap: false,
+    chunkSizeWarningLimit: 500,
+  },
+  optimizeDeps: {
+    include: ['solid-js'],
   },
 });
