@@ -1,9 +1,10 @@
 import { Component, For, createSignal, Show } from 'solid-js'
-import { Function, FunctionParam, ParamType } from '../models/types'
+import { AppFunction, FunctionParam, ParamType, Table } from '../models/types'
+import { secureFunctionEngine } from '../services/secureFunctionEngine'
 
 interface FunctionEditorProps {
-  function: Function
-  onUpdate: (func: Function) => void
+  function: AppFunction
+  onUpdate: (func: AppFunction) => void
 }
 
 const FunctionEditor: Component<FunctionEditorProps> = (props) => {
@@ -11,6 +12,10 @@ const FunctionEditor: Component<FunctionEditorProps> = (props) => {
   const [newParamName, setNewParamName] = createSignal('')
   const [newParamType, setNewParamType] = createSignal<ParamType>('any')
   const [showAddParam, setShowAddParam] = createSignal(false)
+  const [testResult, setTestResult] = createSignal<any>(null)
+  const [testError, setTestError] = createSignal<string>('')
+  const [consoleOutput, setConsoleOutput] = createSignal<string[]>([])
+  const [showTest, setShowTest] = createSignal(false)
 
   const paramTypes: ParamType[] = [
     'string', 'number', 'boolean', 'null', 'object', 'array',
@@ -32,6 +37,42 @@ const FunctionEditor: Component<FunctionEditorProps> = (props) => {
       any: 'bg-gray-100 text-gray-600'
     }
     return colors[type] || 'bg-gray-100 text-gray-700'
+  }
+
+  const testFunction = () => {
+    try {
+      secureFunctionEngine.clearConsoleOutput()
+      
+      // Create test arguments based on parameter types
+      const testArgs = props.function.params.map(param => {
+        switch(param.type) {
+          case 'string': return 'test'
+          case 'number': return 42
+          case 'boolean': return true
+          case 'array': return [1, 2, 3]
+          case 'object': return { key: 'value' }
+          case 'table': return { title: 'TestTable', columns: [], rows: [] }
+          case 'rows': return [{ id: 1, name: 'test' }]
+          default: return null
+        }
+      })
+      
+      const result = secureFunctionEngine.execute(
+        props.function,
+        testArgs,
+        [], // tables
+        [], // views
+        [] // functions
+      )
+      
+      setTestResult(result)
+      setTestError('')
+      setConsoleOutput(secureFunctionEngine.getConsoleOutput())
+    } catch (error) {
+      setTestError(error.message)
+      setTestResult(null)
+      setConsoleOutput(secureFunctionEngine.getConsoleOutput())
+    }
   }
 
   const addParameter = () => {
@@ -228,12 +269,64 @@ const FunctionEditor: Component<FunctionEditorProps> = (props) => {
         />
       </div>
 
+      <div class="mb-6">
+        <div class="flex items-center justify-between mb-2">
+          <label class="block text-sm font-medium">Test Function</label>
+          <button
+            class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={() => {
+              setShowTest(!showTest())
+              if (!showTest()) testFunction()
+            }}
+          >
+            {showTest() ? 'Hide Test' : 'Run Test'}
+          </button>
+        </div>
+        
+        {showTest() && (
+          <div class="border rounded p-4 space-y-3">
+            {testError() ? (
+              <div class="bg-red-50 border border-red-200 rounded p-3">
+                <div class="text-sm font-medium text-red-900">Error:</div>
+                <div class="text-sm text-red-700 font-mono">{testError()}</div>
+              </div>
+            ) : testResult() !== null && (
+              <div class="bg-green-50 border border-green-200 rounded p-3">
+                <div class="text-sm font-medium text-green-900">Result:</div>
+                <div class="text-sm text-green-700 font-mono">
+                  {typeof testResult() === 'object' 
+                    ? JSON.stringify(testResult(), null, 2)
+                    : String(testResult())
+                  }
+                </div>
+              </div>
+            )}
+            
+            {consoleOutput().length > 0 && (
+              <div class="bg-gray-50 border border-gray-200 rounded p-3">
+                <div class="text-sm font-medium text-gray-900 mb-2">Console Output:</div>
+                <div class="space-y-1">
+                  {consoleOutput().map(line => (
+                    <div class="text-sm text-gray-700 font-mono">{line}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            <div class="text-xs text-gray-500">
+              Test arguments: {props.function.params.map(p => p.name).join(', ') || 'none'}
+            </div>
+          </div>
+        )}
+      </div>
+
       <div class="bg-blue-50 border border-blue-200 rounded p-4">
         <h3 class="font-medium text-blue-900 mb-2">Usage Examples</h3>
         <div class="text-sm text-blue-800 space-y-1 font-mono">
           <div>// In Views: SELECT {props.function.name}(column1, column2) FROM table</div>
           <div>// In Layouts: ={props.function.name}(TableA, ViewB.rows)</div>
           <div>// With tables: {props.function.name}(myTable).rows[0].columnName</div>
+          <div>// Debug: console.log('value:', myVariable)</div>
         </div>
       </div>
     </div>

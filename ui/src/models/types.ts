@@ -5,12 +5,21 @@ export interface Project {
   updatedAt: Date
 }
 
-export type CellType = 'string' | 'number' | 'boolean' | 'null' | 'object' | 'array'
+export type CellType = 'string' | 'number' | 'boolean' | 'date' | 'datetime' | 'json' | 'null'
 
 export interface Column {
   id: string
   name: string
   type: CellType
+  defaultValue?: any
+  nullable?: boolean
+  comment?: string
+}
+
+export interface Index {
+  name: string
+  columns: string[]  // column names
+  unique?: boolean
 }
 
 export interface Table {
@@ -19,6 +28,10 @@ export interface Table {
   title: string
   columns: Column[]
   rows: Record<string, any>[]
+  comment?: string
+  primaryKey?: string[]  // column names for composite primary key
+  uniqueConstraints?: Index[]
+  indexes?: Index[]
 }
 
 export interface View {
@@ -48,7 +61,7 @@ export interface FunctionParam {
   description?: string
 }
 
-export interface Function {
+export interface AppFunction {
   id: string
   projectId: string
   name: string
@@ -74,6 +87,7 @@ export interface LayoutElement {
 }
 
 export type TabType = 'table' | 'view' | 'function' | 'layout'
+export type { AppFunction as Function } // Alias for backward compatibility
 
 export interface Tab {
   id: string

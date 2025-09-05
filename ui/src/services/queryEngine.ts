@@ -1,40 +1,49 @@
-import { Table, View } from '../models/types'
+import { Table, View, AppFunction } from '../models/types'
+import { secureFunctionEngine } from './secureFunctionEngine'
 
 export class QueryEngine {
   private tables: Map<string, Table> = new Map()
+  private functions: Map<string, AppFunction> = new Map()
 
   setTables(tables: Table[]) {
     this.tables.clear()
     tables.forEach(t => this.tables.set(t.title.toLowerCase(), t))
   }
 
+  setFunctions(functions: AppFunction[]) {
+    this.functions.clear()
+    functions.forEach(f => this.functions.set(f.name.toLowerCase(), f))
+  }
+
   executeQuery(query: string): { columns: string[], rows: any[], error?: string } {
     try {
       const trimmedQuery = query.trim().toLowerCase()
+      const originalQuery = query.trim()
       
       // Very simple SQL parser - supports basic SELECT, FROM, WHERE, JOIN
       if (!trimmedQuery.startsWith('select')) {
-        throw new Error('Only SELECT queries are supported')
+        throw new Error(`Line 1: Only SELECT queries are supported. Found: "${originalQuery.substring(0, 20)}..."`)
       }
 
       // Parse SELECT clause
       const selectMatch = trimmedQuery.match(/select\s+(.*?)\s+from/s)
       if (!selectMatch) {
-        throw new Error('Invalid SELECT statement')
+        throw new Error('Invalid SELECT statement. Syntax: SELECT columns FROM table')
       }
       const selectClause = selectMatch[1].trim()
 
-      // Parse FROM clause
-      const fromMatch = trimmedQuery.match(/from\s+(\w+)/i)
+      // Parse FROM clause - handle table names with spaces using quotes or backticks
+      const fromMatch = trimmedQuery.match(/from\s+(?:`([^`]+)`|"([^"]+)"|'([^']+)'|(\w+))/i)
       if (!fromMatch) {
-        throw new Error('FROM clause is required')
+        throw new Error('FROM clause is required. Syntax: SELECT columns FROM table')
       }
-      const tableName = fromMatch[1].toLowerCase()
+      const tableName = (fromMatch[1] || fromMatch[2] || fromMatch[3] || fromMatch[4]).toLowerCase()
 
       // Get the table
       const table = this.tables.get(tableName)
       if (!table) {
-        throw new Error(`Table "${tableName}" not found`)
+        const availableTables = Array.from(this.tables.keys()).join(', ')
+        throw new Error(`Table "${tableName}" not found. Available tables: ${availableTables || 'none'}`)
       }
 
       let resultRows = [...table.rows]
@@ -47,11 +56,11 @@ export class QueryEngine {
         resultRows = this.applyWhere(resultRows, whereClause)
       }
 
-      // Parse JOIN clause (optional)
-      const joinMatch = trimmedQuery.match(/join\s+(\w+)\s+on\s+(.*?)(?:\s+where|\s*$)/i)
+      // Parse JOIN clause (optional) - handle table names with spaces
+      const joinMatch = trimmedQuery.match(/join\s+(?:`([^`]+)`|"([^"]+)"|'([^']+)'|(\w+))\s+on\s+(.*?)(?:\s+where|\s*$)/i)
       if (joinMatch) {
-        const joinTableName = joinMatch[1].toLowerCase()
-        const joinCondition = joinMatch[2].trim()
+        const joinTableName = (joinMatch[1] || joinMatch[2] || joinMatch[3] || joinMatch[4]).toLowerCase()
+        const joinCondition = joinMatch[5].trim()
         const joinTable = this.tables.get(joinTableName)
         
         if (!joinTable) {
@@ -87,9 +96,48 @@ export class QueryEngine {
         // Parse specific columns
         const columns = selectClause.split(',').map(c => c.trim())
         resultColumns = []
+        const columnMappings: { [key: string]: string } = {}
         
         // Process each column (could be expression or alias)
         for (const col of columns) {
+          // Handle FN.functionName() calls
+          const fnMatch = col.match(/fn\.(\w+)\((.*?)\)(?:\s+as\s+)?(\w+)?/i)
+          if (fnMatch) {
+            const [, funcName, params, alias] = fnMatch
+            const columnName = alias || `${funcName}()`
+            resultColumns.push(columnName)
+            
+            const func = this.functions.get(funcName.toLowerCase())
+            if (func) {
+              // Execute function for each row
+              resultRows = resultRows.map(row => {
+                try {
+                  const result = secureFunctionEngine.execute(
+                    func,
+                    [], // No parameters for now
+                    Array.from(this.tables.values()),
+                    [], // No views for now
+                    Array.from(this.functions.values())
+                  )
+                  console.log('Function result:', result, 'for column:', columnName)
+                  return {
+                    ...row,
+                    [columnName]: result
+                  }
+                } catch (error) {
+                  console.error('Error executing function:', funcName, error)
+                  return {
+                    ...row,
+                    [columnName]: null
+                  }
+                }
+              })
+            } else {
+              console.warn('Function not found:', funcName)
+            }
+            continue
+          }
+          
           // Handle COUNT, SUM, AVG, etc.
           if (col.includes('(')) {
             const funcMatch = col.match(/(\w+)\((.*?)\)(?:\s+as\s+(\w+))?/i)
@@ -125,24 +173,27 @@ export class QueryEngine {
               const [, fieldName, alias] = aliasMatch
               const columnName = alias || fieldName
               resultColumns.push(columnName)
-              
-              if (alias) {
-                // Rename column in results
-                resultRows = resultRows.map(row => ({
-                  ...row,
-                  [columnName]: row[fieldName]
-                }))
-              }
+              columnMappings[columnName] = fieldName
             }
           }
         }
         
         // Filter to only selected columns
-        if (!selectClause.includes('(')) {
+        const hasFunctions = selectClause.toLowerCase().includes('fn.')
+        const hasAggregates = selectClause.match(/\b(count|sum|avg|max|min)\s*\(/i)
+        
+        if (!hasAggregates && resultColumns.length > 0) {
           resultRows = resultRows.map(row => {
             const newRow: any = {}
             for (const col of resultColumns) {
-              newRow[col] = row[col]
+              if (hasFunctions && col in row) {
+                // Function result already in row
+                newRow[col] = row[col]
+              } else {
+                // Regular column mapping
+                const sourceField = columnMappings[col] || col
+                newRow[col] = row[sourceField]
+              }
             }
             return newRow
           })

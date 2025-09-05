@@ -1,11 +1,12 @@
-import { Function, Table, View } from '../models/types'
+import { AppFunction, Table, View } from '../models/types'
 
 export class SecureFunctionEngine {
-  private functions: Map<string, Function> = new Map()
+  private functions: Map<string, AppFunction> = new Map()
   private tables: Map<string, Table> = new Map()
   private views: Map<string, View> = new Map()
+  private consoleOutput: string[] = []
 
-  setFunctions(functions: Function[]) {
+  setFunctions(functions: AppFunction[]) {
     this.functions.clear()
     functions.forEach(f => this.functions.set(f.name, f))
   }
@@ -18,6 +19,14 @@ export class SecureFunctionEngine {
   setViews(views: View[]) {
     this.views.clear()
     views.forEach(v => this.views.set(v.title, v))
+  }
+
+  getConsoleOutput(): string[] {
+    return this.consoleOutput
+  }
+
+  clearConsoleOutput() {
+    this.consoleOutput = []
   }
 
   /**
@@ -51,7 +60,7 @@ export class SecureFunctionEngine {
     }
   }
 
-  private prepareArguments(func: Function, args: any[]): any[] {
+  private prepareArguments(func: AppFunction, args: any[]): any[] {
     return func.params.map((param, index) => {
       const value = args[index]
       
@@ -135,7 +144,26 @@ export class SecureFunctionEngine {
   }
 
   private createSafeContext() {
+    const self = this
     return {
+      // Console for debugging
+      console: {
+        log: (...args: any[]) => {
+          const message = args.map(arg => {
+            if (typeof arg === 'object') {
+              try {
+                return JSON.stringify(arg, null, 2)
+              } catch {
+                return String(arg)
+              }
+            }
+            return String(arg)
+          }).join(' ')
+          self.consoleOutput.push(message)
+          console.log('[Function]', message)
+        }
+      },
+      
       // Math functions (safe)
       Math: {
         abs: Math.abs,
@@ -256,9 +284,13 @@ export class SecureFunctionEngine {
     }
   }
 
-  private buildSafeFunction(func: Function, context: any): Function {
+  private buildSafeFunction(func: AppFunction, context: any): Function {
     const paramNames = func.params.map(p => p.name)
     const contextKeys = Object.keys(context)
+    
+    // Check if the body already has a return statement
+    const hasReturn = /\breturn\b/.test(func.body)
+    const functionBody = hasReturn ? func.body : `return ${func.body}`
     
     // Build function with isolated scope
     const functionCode = `
@@ -268,32 +300,25 @@ export class SecureFunctionEngine {
         ${contextKeys.map(key => `const ${key} = arguments[${paramNames.length}]['${key}'];`).join('\n')}
         
         // User code
-        ${func.body}
+        ${functionBody}
       })
     `
 
+    console.log('Generated function code:', functionCode)
+    
     // Use Function constructor (this is safe as we control the code)
     return new Function(functionCode)()
   }
 
   private executeWithTimeout(fn: Function, args: any[], context: any, timeout: number): any {
-    // Create a promise that rejects after timeout
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Function execution timeout')), timeout)
-    })
-
-    // Create execution promise
-    const executionPromise = new Promise((resolve, reject) => {
-      try {
-        const result = fn(...args, context)
-        resolve(result)
-      } catch (error) {
-        reject(error)
-      }
-    })
-
-    // Race between execution and timeout
-    return Promise.race([executionPromise, timeoutPromise])
+    // For simple synchronous functions, just execute directly
+    // We'll add timeout protection later if needed
+    try {
+      const result = fn(...args, context)
+      return result
+    } catch (error) {
+      throw error
+    }
   }
 
   /**
@@ -381,6 +406,19 @@ export class SecureFunctionEngine {
       
       return arg
     })
+  }
+
+  /**
+   * Execute a function directly (for use in queries)
+   */
+  execute(func: AppFunction, args: any[], tables: Table[], views: View[], functions: AppFunction[]): any {
+    // Update internal state
+    this.setTables(tables)
+    this.setViews(views)
+    this.setFunctions(functions)
+    
+    // Execute the function
+    return this.executeFunction(func.name, args)
   }
 }
 

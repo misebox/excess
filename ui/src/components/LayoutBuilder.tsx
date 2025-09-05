@@ -118,7 +118,7 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
 
   const handleDragOver = (e: DragEvent) => {
     e.preventDefault()
-    e.dataTransfer!.dropEffect = 'copy'
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
     
     if (containerRef) {
       const rect = containerRef.getBoundingClientRect()
@@ -146,7 +146,9 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
     e.preventDefault()
     
     try {
-      const data = JSON.parse(e.dataTransfer!.getData('application/json'))
+      const dataTransferData = e.dataTransfer?.getData('application/json')
+      if (!dataTransferData) return
+      const data = JSON.parse(dataTransferData)
       
       if (containerRef) {
         const rect = containerRef.getBoundingClientRect()
@@ -308,8 +310,8 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
           <div
             class="absolute border-2 border-blue-500 bg-blue-100 opacity-50 rounded pointer-events-none"
             style={{
-              left: `${dropPreview()!.x}px`,
-              top: `${dropPreview()!.y}px`,
+              left: `${dropPreview()?.x ?? 0}px`,
+              top: `${dropPreview()?.y ?? 0}px`,
               width: `${6 * GRID_SIZE}px`,
               height: `${4 * GRID_SIZE}px`
             }}

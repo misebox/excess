@@ -1,215 +1,140 @@
-# Excess - Function-Based Table Calculation App
+# Excess - 基本機能改善計画
 
-**Design Philosophy**: This is NOT an Excel clone. Instead of cell formulas (=A1+B1), we use reusable Functions that execute in a secure sandbox environment.
+## 現在の実装状況
 
-## Core Architecture
+### ✅ 完成済み機能
+- 4つのコアモデル (Table, View, Function, Layout)
+- IndexedDB永続化
+- サイドバーナビゲーション
+- テーブル編集（セル編集、列追加/削除、行追加/削除）
+- CSV取り込み
+- View のSQLクエリ実行
+- Function のサンドボックス実行
+- FN.functionName() によるView内での関数呼び出し
+- セルの範囲選択、コピー＆ペースト
+- Undo/Redo機能
+- Layout へのドラッグ＆ドロップ配置
 
-### Data Models
-- **Table**: `{ id, title, columns: [{ name, type }], rows: [{}] }`
-- **View**: `{ id, query, source_tables: [] }`
-- **Function**: `{ name, params, body }` - Reusable calculations, not cell formulas
-- **Layout**: `{ id, elements: [{ type, position, size, data }] }`
+## 優先度1: 基本機能の不具合修正
 
-### Components
+### 1.1 データの整合性
+**問題**: 列名変更時にデータキーが更新されない場合がある
+- [ ] 列名変更時の全データ更新処理の確認
+- [ ] 既存データのマイグレーション処理
+- [ ] データキー不整合の自動検出・修復
 
-#### Table Editor
-- Grid component for data entry and viewing
-- Column type inference (string, number, boolean, null)
-- Column management (add/delete columns)
-- CSV import functionality
-- No cell-level formulas - data is calculated via Functions
+### 1.2 View実行の安定性
+**問題**: クエリエラー時のエラーメッセージが不親切
+- [x] エラーメッセージの詳細化（行番号、カラム位置）
+- [ ] クエリ構文のハイライト
+- [ ] サポートされていない構文の明確な警告
 
-#### View Engine
-- SQL-like queries for table joins/filters
-- Real-time result computation
-- Reference multiple tables
+### 1.3 Function実行の改善
+**問題**: 関数エラー時にデバッグが困難
+- [x] 関数実行時のエラー行番号表示
+- [x] console.log のサポート（デバッグ用）
+- [x] 実行結果のプレビュー機能
 
-#### Function System
-- **Key Differentiator**: Functions are standalone, reusable calculations
-- JavaScript-based evaluation in secure sandbox
-- Reference tables, views, and other functions
-- Execute on-demand, not per-cell
+## 優先度2: 必須のデータ操作機能
 
-#### Layout Builder
-- Free-form canvas for dashboards
-- Drag/drop tables, views, charts
-- Charts are Layout-only (not embedded in tables)
-- Multiple layout sheets
+### 2.1 テーブル構造の詳細設定
+**現状**: 基本的な列定義のみ
+- [ ] 複合プライマリキーの設定
+- [ ] 複合ユニーク制約の設定
+- [ ] インデックスの作成・管理
+- [ ] テーブル編集ダイアログの実装
+- [ ] 制約違反のバリデーション
 
-## Implementation Stack
-- Frontend: React + TypeScript
-- State: Zustand or Redux
-- Grid: AG-Grid or custom canvas
-- Parser: SQL.js or custom query parser
+### 2.2 データエクスポート
+**現状**: CSVインポートのみ、エクスポート不可
+- [x] CSV エクスポート
+- [x] TSV エクスポート（Excel互換）
+- [x] JSON エクスポート（プロジェクト全体のバックアップ）
+- [ ] 選択範囲のみのエクスポート
 
-## File Structure
-```
-src/
-  models/     # Data types
-  stores/     # State management
-  components/ # UI components
-  engine/     # Calculation engine
-  utils/      # Helpers
-```
+### 2.3 テーブルのソート・フィルタ
+**現状**: ソート・フィルタ機能なし
+- [x] 列ヘッダクリックでソート（昇順/降順）
+- [x] 簡易フィルタ入力欄
+- [ ] ソート・フィルタ状態の保持
+- [x] フィルタのクリアボタン
 
-## Implementation Status
+### 2.4 検索と置換
+**現状**: テーブル内検索不可
+- [x] Ctrl+F で検索ダイアログ
+- [x] 検索結果のハイライト
+- [x] 置換機能（選択範囲/全体）
+- [x] 大文字小文字の区別オプション
 
-### Completed ✓
-- Core data models (Project, Table, View, Function, Layout)
-- IndexedDB persistence layer
-- Table editor with inline cell editing
-- Function execution engine with secure sandbox
-- CSV import functionality
-- Column management (add/delete columns)
-- +Column button in table header
-- TypeScript type system
-- Basic UI components (Sidebar, TabBar, etc.)
+## 優先度3: 操作性の向上
 
-### Missing Essential Features
+### 3.1 キーボード操作の完全対応
+**現状**: 一部キーボード操作のみ
+- [x] 矢印キーでのセル移動
+- [x] Tab/Shift+Tab での横移動
+- [x] Enter での縦移動と編集確定
+- [x] F2 でセル編集開始
+- [x] Delete で選択範囲のクリア
 
-## Priority 1: Core Table Functionality
+### 3.2 列幅の調整
+**現状**: 固定幅
+- [x] 列境界ドラッグでのリサイズ
+- [x] ダブルクリックで自動幅調整
+- [ ] 列幅の保存と復元
 
-### 1. Data Export
-**Problem**: Can import CSV but no export functionality
-**Implementation**:
-- CSV export functionality
-- JSON export for all project data
-- Copy table data to clipboard
-- Export function results
+### 3.3 行番号とヘッダーの固定
+**現状**: スクロール時に見づらい
+- [ ] 行番号列の固定表示
+- [x] ヘッダー行の固定（スクロール時も表示）
+- [ ] 選択行・列のハイライト強化
 
-### 2. Enhanced Data Import
-**Problem**: Limited import options
-**Implementation**:
-- Excel file import (.xlsx) using SheetJS
-- Copy/paste from external spreadsheets
-- Drag-and-drop file upload
-- Import validation and error handling
+## 優先度4: データ型と検証
 
-### 3. Data Validation & Types
-**Problem**: No input validation or automatic type conversion
-**Implementation**:
-- Cell data validation rules (number ranges, text patterns)
-- Automatic type inference on paste/import
-- Format options (currency, percentage, dates)
-- Data type conversion helpers
-- Input error handling and user feedback
+### 4.1 データ型の改善
+**現状**: 基本型のみ（string, number, boolean）
+- [ ] 日付型のサポート
+- [ ] 時刻型のサポート
+- [ ] データ型の自動推論改善
+- [ ] 型変換の明示的なUI
 
-## Priority 2: Essential Table Operations
+### 4.2 入力検証
+**現状**: 検証なし
+- [ ] 数値範囲の制限
+- [ ] 必須項目の設定
+- [ ] パターンマッチング（正規表現）
+- [ ] エラー表示の改善
 
-### 4. Sorting & Filtering
-**Problem**: No way to sort or filter table data
-**Implementation**:
-- Column header click to sort (asc/desc)
-- Filter dropdowns per column
-- Multi-column sorting
-- Custom filter conditions (>, <, contains, etc.)
-- Filter state persistence
+## 優先度5: パフォーマンスと安定性
 
-### 5. Row Management
-**Problem**: Limited row operations
-**Implementation**:
-- Insert/delete rows at specific positions
-- Drag-to-select multiple rows
-- Right-click context menus for rows
-- Undo/redo for structure changes
+### 5.1 大規模データ対応
+**現状**: 大量データで遅い
+- [ ] 仮想スクロール実装
+- [ ] 遅延読み込み
+- [ ] ページネーション オプション
 
-### 6. Find & Replace
-**Problem**: No search functionality within tables
-**Implementation**:
-- Find/replace dialog with regex support
-- Highlight matching cells
-- Replace in selection or entire table
-- Case-sensitive search options
+### 5.2 自動保存とリカバリ
+**現状**: 手動保存のみ
+- [ ] 自動保存（変更時）
+- [ ] 作業内容の自動バックアップ
+- [ ] クラッシュ時のリカバリ
 
-## Priority 3: Advanced Features
+### 5.3 エラーハンドリング
+**現状**: エラー時にアプリが停止する場合がある
+- [ ] エラーバウンダリの実装
+- [ ] 部分的な機能停止（全体は継続）
+- [ ] エラーレポート機能
 
-### 7. Charts & Visualization
-**Problem**: Layout supports charts but no implementation
-**Implementation**:
-- Chart.js or Recharts integration for Layout component
-- Line, bar, pie, scatter chart types
-- Chart configuration UI in Layout builder
-- Data series selection from tables/views/functions
-- Chart updates when referenced data changes
-- Charts are Layout-exclusive (not embedded in tables)
+## 実装順序
 
-### 8. Collaboration Features
-**Problem**: Single-user only
-**Implementation**:
-- Real-time collaboration using WebRTC or WebSocket
-- Conflict resolution for concurrent edits
-- User presence indicators
-- Comment system for cells
-- Change history and version tracking
+1. **第1段階**（1週間）: 不具合修正（優先度1）
+2. **第2段階**（2週間）: 必須機能（優先度2）  
+3. **第3段階**（1週間）: 操作性（優先度3）
+4. **第4段階**（1週間）: データ型（優先度4）
+5. **第5段階**（1週間）: 安定性（優先度5）
 
-### 9. Advanced SQL View Engine
-**Problem**: Views use string queries but no SQL parser
-**Implementation**:
-- SQL parser for JOIN, WHERE, GROUP BY, ORDER BY
-- Query builder UI for non-technical users
-- View result caching and invalidation
-- Subquery support
-- Aggregate functions integration
+## 設計原則の維持
 
-## Priority 4: User Experience
-
-### 10. Keyboard Navigation
-**Problem**: Mouse-only interface
-**Implementation**:
-- Arrow key navigation between cells
-- Tab/Shift+Tab for cell traversal
-- Enter to confirm edits and move down
-- Escape to cancel edits
-- Keyboard shortcuts for common actions
-
-### 11. Performance Optimization
-**Problem**: No optimization for large datasets
-**Implementation**:
-- Virtual scrolling for large tables
-- Lazy loading of table rows
-- Efficient diff algorithms for updates
-- Web Worker for heavy calculations
-- IndexedDB query optimization
-
-### 12. UI/UX Improvements
-**Problem**: Basic styling and limited interactions
-**Implementation**:
-- Resizable columns with drag handles
-- Row/column highlighting on hover
-- Loading states and progress indicators
-- Responsive design for mobile devices
-- Dark mode theme support
-
-## Technical Debt & Infrastructure
-
-### 13. Error Handling & Testing
-**Implementation**:
-- Comprehensive error boundaries
-- User-friendly error messages
-- Unit tests for core functions
-- Integration tests for data flow
-- E2E tests for critical user paths
-
-### 14. Documentation & Help
-**Implementation**:
-- In-app help system
-- Function reference documentation
-- Keyboard shortcut cheatsheet
-- Video tutorials for complex features
-- Migration guides for updates
-
-## Development Priorities
-
-**Phase 1** (Essential): Items 1-6 (Data Export, Enhanced Import, Validation, Sorting, Row Management, Find/Replace)
-**Phase 2** (Polish): Items 7-9 (Charts for Layout, Collaboration, Advanced SQL)  
-**Phase 3** (Scale): Items 10-12 (Keyboard nav, Performance, UI/UX)
-**Phase 4** (Quality): Items 13-14 (Testing, Documentation)
-
-## Key Design Decisions
-
-1. **Function-Based**: No Excel-style cell formulas (=A1+B1). Use reusable Functions instead.
-2. **Secure Sandbox**: Functions execute in isolated environment for security.
-3. **Layout Charts**: Charts only exist in Layout component, not embedded in tables.
-4. **CSV Support**: Import implemented, export needed.
-5. **Column Management**: Add/delete columns supported, +Column button in header.
-6. **Table Focus**: Core app is about table data management and Function calculations.
+- **Excelではない**: セル単位の数式（=A1+B1）は使わない
+- **Function中心**: 再利用可能な関数で計算
+- **セキュアサンドボックス**: 関数は隔離環境で実行
+- **シンプルさ重視**: 複雑な機能より基本機能の完成度

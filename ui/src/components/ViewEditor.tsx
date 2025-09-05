@@ -1,10 +1,11 @@
 import { Component, createSignal, For, Show, createEffect } from 'solid-js'
-import { View, Table } from '../models/types'
+import { View, Table, AppFunction } from '../models/types'
 import { queryEngine } from '../services/queryEngine'
 
 interface ViewEditorProps {
   view: View
   tables: Table[]
+  functions: AppFunction[]
   onUpdate: (view: View) => void
 }
 
@@ -17,9 +18,10 @@ const ViewEditor: Component<ViewEditorProps> = (props) => {
   
   const [isExecuting, setIsExecuting] = createSignal(false)
 
-  // Update query engine with available tables
+  // Update query engine with available tables and functions
   createEffect(() => {
     queryEngine.setTables(props.tables)
+    queryEngine.setFunctions(props.functions)
   })
 
   const executeQuery = () => {
@@ -83,6 +85,8 @@ const ViewEditor: Component<ViewEditorProps> = (props) => {
             <div>• ORDER BY column ASC/DESC</div>
             <div>• LIMIT number</div>
             <div>• Aggregate functions (COUNT, SUM, AVG, MAX, MIN)</div>
+            <div>• FN.functionName() for custom functions</div>
+            <div>• Column aliases with AS</div>
           </div>
         </div>
       </div>

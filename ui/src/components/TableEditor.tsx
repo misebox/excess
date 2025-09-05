@@ -1,9 +1,22 @@
-import { Component, For, createSignal, Show, onMount, onCleanup } from 'solid-js'
-import { Table, CellType } from '../models/types'
+import { Component, For, createSignal, Show, onMount, onCleanup, createMemo, createEffect } from 'solid-js'
+import { Table, CellType, Column } from '../models/types'
+import ColumnDialog from './ColumnDialog'
+import SearchDialog, { SearchOptions } from './SearchDialog'
+import { exportToCSV, exportToTSV, exportToJSON, downloadFile } from '../utils/exportUtils'
+
+// ============================================================================
+// INTERFACES
+// ============================================================================
 
 interface TableEditorProps {
   table: Table
   onUpdate: (table: Table) => void
+}
+
+interface SearchResult {
+  row: number
+  col: string
+  index?: number
 }
 
 interface CellPosition {
@@ -21,30 +34,193 @@ interface HistoryEntry {
   timestamp: number
 }
 
+// ============================================================================
+// COMPONENT
+// ============================================================================
+
 const TableEditor: Component<TableEditorProps> = (props) => {
+  // ============================================================================
+  // STATE DECLARATIONS
+  // ============================================================================
+  
+  // Cell editing state
   const [editingCell, setEditingCell] = createSignal<CellPosition | null>(null)
-  const [newColumnType, setNewColumnType] = createSignal<CellType>('string')
   const [editingColumnName, setEditingColumnName] = createSignal<string | null>(null)
   const [editingColumnValue, setEditingColumnValue] = createSignal<string>('')
+  
+  // Selection and interaction state
   const [selection, setSelection] = createSignal<Selection | null>(null)
   const [isSelecting, setIsSelecting] = createSignal(false)
+  const [selectedRows, setSelectedRows] = createSignal<Set<number>>(new Set())
+  const [contextMenu, setContextMenu] = createSignal<{x: number, y: number, row: number} | null>(null)
+  
+  // Dialog state
+  const [showColumnDialog, setShowColumnDialog] = createSignal(false)
+  const [showSearchDialog, setShowSearchDialog] = createSignal(false)
+  const [showFilters, setShowFilters] = createSignal(false)
+  
+  // Clipboard and history state
   const [clipboard, setClipboard] = createSignal<any[][]>([])
   const [history, setHistory] = createSignal<HistoryEntry[]>([])
   const [historyIndex, setHistoryIndex] = createSignal(-1)
+  
+  // Sorting and filtering state
+  const [sortColumn, setSortColumn] = createSignal<string | null>(null)
+  const [sortDirection, setSortDirection] = createSignal<'asc' | 'desc'>('asc')
+  const [columnFilters, setColumnFilters] = createSignal<{ [key: string]: string }>({})
+  
+  // Column resizing state
+  const [columnWidths, setColumnWidths] = createSignal<{ [key: string]: number }>({})
+  const [resizingColumn, setResizingColumn] = createSignal<string | null>(null)
+  const [resizeStartX, setResizeStartX] = createSignal(0)
+  const [resizeStartWidth, setResizeStartWidth] = createSignal(0)
+  
+  // Search state
+  const [searchHighlight, setSearchHighlight] = createSignal<{row: number, col: string} | null>(null)
+  const [lastSearchTerm, setLastSearchTerm] = createSignal('')
+  const [lastSearchIndex, setLastSearchIndex] = createSignal(0)
+  const [searchResults, setSearchResults] = createSignal<SearchResult[]>([])
+  const [currentSearchIndex, setCurrentSearchIndex] = createSignal(-1)
 
-  const cellTypes: CellType[] = ['string', 'number', 'boolean', 'null', 'object', 'array']
+  // Constants
   const MAX_HISTORY = 50
+  
+  // Row validation state
+  const [rowValidationStatus, setRowValidationStatus] = createSignal<Map<number, { valid: boolean, errors: string[] }>>(new Map())
+  
+  // Validate a single row
+  const validateRow = (row: Record<string, any>, rowIndex: number): { valid: boolean, errors: string[] } => {
+    const errors: string[] = []
+    
+    // Check each column's constraints
+    props.table.columns.forEach(column => {
+      const value = row[column.name]
+      
+      // Check nullable constraint
+      if (column.nullable === false && (value === null || value === undefined || value === '')) {
+        errors.push(`${column.name} is required`)
+      }
+      
+      // Check type constraints
+      if (value !== null && value !== undefined && value !== '') {
+        switch (column.type) {
+          case 'number':
+            if (typeof value !== 'number' && isNaN(Number(value))) {
+              errors.push(`${column.name} must be a number`)
+            }
+            break
+          case 'boolean':
+            if (typeof value !== 'boolean') {
+              errors.push(`${column.name} must be true or false`)
+            }
+            break
+          case 'date':
+          case 'datetime':
+            // Basic date validation
+            if (typeof value === 'string' && !Date.parse(value)) {
+              errors.push(`${column.name} must be a valid date`)
+            }
+            break
+        }
+      }
+    })
+    
+    return { valid: errors.length === 0, errors }
+  }
+  
+  // Validate all rows
+  const validateAllRows = () => {
+    const newValidationStatus = new Map<number, { valid: boolean, errors: string[] }>()
+    props.table.rows.forEach((row, index) => {
+      newValidationStatus.set(index, validateRow(row, index))
+    })
+    setRowValidationStatus(newValidationStatus)
+  }
+  
+  // Run validation when table data changes
+  createEffect(() => {
+    validateAllRows()
+  })
 
+  // ============================================================================
+  // COMPUTED VALUES
+  // ============================================================================
+  
+  // Filtered rows based on column filters
+  const filteredRows = createMemo(() => {
+    const filters = columnFilters()
+    const hasFilters = Object.values(filters).some(f => f.length > 0)
+    
+    if (!hasFilters) {
+      return props.table.rows
+    }
+    
+    return props.table.rows.filter(row => {
+      return Object.entries(filters).every(([colName, filterValue]) => {
+        if (!filterValue) return true
+        const cellValue = String(row[colName] ?? '').toLowerCase()
+        return cellValue.includes(filterValue.toLowerCase())
+      })
+    })
+  })
+
+  // Sorted rows based on sort column and direction
+  const getSortedRows = createMemo(() => {
+    const col = sortColumn()
+    if (!col) {
+      return filteredRows()
+    }
+    
+    return [...filteredRows()].sort((a, b) => {
+      const aVal = a[col]
+      const bVal = b[col]
+      
+      let comparison = 0
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        comparison = aVal - bVal
+      } else {
+        comparison = String(aVal).localeCompare(String(bVal))
+      }
+      
+      return sortDirection() === 'asc' ? comparison : -comparison
+    })
+  })
+
+  // ============================================================================
+  // LIFECYCLE
+  // ============================================================================
+  
   onMount(() => {
     document.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('click', handleDocumentClick)
     // Initialize history with current state
     addToHistory(props.table)
   })
 
   onCleanup(() => {
     document.removeEventListener('keydown', handleKeyDown)
+    document.removeEventListener('click', handleDocumentClick)
   })
 
+  // ============================================================================
+  // EVENT HANDLERS
+  // ============================================================================
+  
+  const handleDocumentClick = (e: MouseEvent) => {
+    // Close context menu if clicking outside
+    if (contextMenu() && !(e.target as HTMLElement).closest('.context-menu')) {
+      setContextMenu(null)
+    }
+  }
+
+  const handleMouseUp = () => {
+    setIsSelecting(false)
+  }
+
+  // ============================================================================
+  // HISTORY OPERATIONS
+  // ============================================================================
+  
   const addToHistory = (table: Table) => {
     const currentHistory = history()
     const currentIndex = historyIndex()
@@ -92,42 +268,163 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     }
   }
 
+  // ============================================================================
+  // KEYBOARD HANDLING
+  // ============================================================================
+  
   const handleKeyDown = (e: KeyboardEvent) => {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
     const ctrlKey = isMac ? e.metaKey : e.ctrlKey
 
+    // Don't handle keys when editing a cell
+    if (editingCell()) {
+      if (e.key === 'Enter') {
+        e.preventDefault()
+        const input = document.querySelector('input:focus') as HTMLInputElement
+        if (input) {
+          input.blur()
+        }
+        // Move to next row
+        const sel = selection()
+        if (sel && sel.start.row < props.table.rows.length - 1) {
+          moveSelection(1, 0)
+        }
+      } else if (e.key === 'Escape') {
+        setEditingCell(null)
+      } else if (e.key === 'Tab') {
+        e.preventDefault()
+        const input = document.querySelector('input:focus') as HTMLInputElement
+        if (input) {
+          input.blur()
+        }
+        // Move to next column
+        moveSelection(0, e.shiftKey ? -1 : 1)
+      }
+      return
+    }
+
     if (ctrlKey) {
       switch(e.key.toLowerCase()) {
         case 'c':
-          if (!editingCell()) {
-            e.preventDefault()
-            copySelection()
-          }
+          e.preventDefault()
+          copySelection()
           break
         case 'x':
-          if (!editingCell()) {
-            e.preventDefault()
-            cutSelection()
-          }
+          e.preventDefault()
+          cutSelection()
           break
         case 'v':
-          if (!editingCell()) {
-            e.preventDefault()
-            pasteSelection()
-          }
+          e.preventDefault()
+          pasteSelection()
           break
         case 'z':
-          if (!editingCell()) {
-            e.preventDefault()
-            if (e.shiftKey) {
-              redo()
-            } else {
-              undo()
-            }
+          e.preventDefault()
+          if (e.shiftKey) {
+            redo()
+          } else {
+            undo()
           }
+          break
+        case 'f':
+          e.preventDefault()
+          setShowSearchDialog(true)
+          break
+      }
+    } else {
+      switch(e.key) {
+        case 'ArrowUp':
+          e.preventDefault()
+          moveSelection(-1, 0, e.shiftKey)
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          moveSelection(1, 0, e.shiftKey)
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          moveSelection(0, -1, e.shiftKey)
+          break
+        case 'ArrowRight':
+          e.preventDefault()
+          moveSelection(0, 1, e.shiftKey)
+          break
+        case 'Tab':
+          e.preventDefault()
+          moveSelection(0, e.shiftKey ? -1 : 1)
+          break
+        case 'Enter':
+          e.preventDefault()
+          const sel = selection()
+          if (sel) {
+            setEditingCell({ row: sel.start.row, col: sel.start.col })
+          }
+          break
+        case 'F2':
+          e.preventDefault()
+          const currentSel = selection()
+          if (currentSel) {
+            setEditingCell({ row: currentSel.start.row, col: currentSel.start.col })
+          }
+          break
+        case 'Delete':
+        case 'Backspace':
+          e.preventDefault()
+          clearSelection()
           break
       }
     }
+  }
+
+  // ============================================================================
+  // SELECTION OPERATIONS
+  // ============================================================================
+  
+  const moveSelection = (rowDelta: number, colDelta: number, extend: boolean = false) => {
+    const sel = selection()
+    if (!sel) {
+      // Start from top-left if no selection
+      setSelection({
+        start: { row: 0, col: props.table.columns[0]?.name || '' },
+        end: { row: 0, col: props.table.columns[0]?.name || '' }
+      })
+      return
+    }
+
+    const cols = props.table.columns.map(c => c.name)
+    const currentColIndex = cols.indexOf(sel.end.col)
+    
+    let newRow = Math.max(0, Math.min(props.table.rows.length - 1, sel.end.row + rowDelta))
+    let newColIndex = Math.max(0, Math.min(cols.length - 1, currentColIndex + colDelta))
+    let newCol = cols[newColIndex]
+
+    if (extend) {
+      setSelection({
+        start: sel.start,
+        end: { row: newRow, col: newCol }
+      })
+    } else {
+      setSelection({
+        start: { row: newRow, col: newCol },
+        end: { row: newRow, col: newCol }
+      })
+    }
+  }
+
+  const clearSelection = () => {
+    const sel = selection()
+    if (!sel) return
+    
+    const cells = getCellsInSelection(sel)
+    const newTable = JSON.parse(JSON.stringify(props.table))
+    
+    cells.forEach(cell => {
+      if (newTable.rows[cell.row]) {
+        newTable.rows[cell.row][cell.col] = null
+      }
+    })
+    
+    addToHistory(newTable)
+    props.onUpdate(newTable)
   }
 
   const getCellsInSelection = (sel: Selection): CellPosition[] => {
@@ -135,16 +432,16 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     const startRow = Math.min(sel.start.row, sel.end.row)
     const endRow = Math.max(sel.start.row, sel.end.row)
     
-    const colIndices = props.table.columns.map((c, i) => ({ id: c.id, index: i }))
-    const startColIndex = colIndices.find(c => c.id === sel.start.col)?.index ?? 0
-    const endColIndex = colIndices.find(c => c.id === sel.end.col)?.index ?? 0
+    const colIndices = props.table.columns.map((c, i) => ({ name: c.name, index: i }))
+    const startColIndex = colIndices.find(c => c.name === sel.start.col)?.index ?? 0
+    const endColIndex = colIndices.find(c => c.name === sel.end.col)?.index ?? 0
     const startCol = Math.min(startColIndex, endColIndex)
     const endCol = Math.max(startColIndex, endColIndex)
     
     for (let r = startRow; r <= endRow; r++) {
       for (let c = startCol; c <= endCol; c++) {
         if (props.table.columns[c]) {
-          cells.push({ row: r, col: props.table.columns[c].id })
+          cells.push({ row: r, col: props.table.columns[c].name })
         }
       }
     }
@@ -152,6 +449,18 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     return cells
   }
 
+  const isCellSelected = (rowIndex: number, columnName: string): boolean => {
+    const sel = selection()
+    if (!sel) return false
+    
+    const cells = getCellsInSelection(sel)
+    return cells.some(c => c.row === rowIndex && c.col === columnName)
+  }
+
+  // ============================================================================
+  // CLIPBOARD OPERATIONS
+  // ============================================================================
+  
   const copySelection = () => {
     const sel = selection()
     if (!sel) return
@@ -237,8 +546,8 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     
     const newTable = JSON.parse(JSON.stringify(props.table))
     const startRow = Math.min(sel.start.row, sel.end.row)
-    const colIndices = props.table.columns.map((c, i) => ({ id: c.id, index: i }))
-    const startColIndex = colIndices.find(c => c.id === sel.start.col)?.index ?? 0
+    const colIndices = props.table.columns.map((c, i) => ({ name: c.name, index: i }))
+    const startColIndex = colIndices.find(c => c.name === sel.start.col)?.index ?? 0
     
     data.forEach((rowData, r) => {
       const targetRow = startRow + r
@@ -254,7 +563,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
       rowData.forEach((cellData, c) => {
         const targetCol = startColIndex + c
         if (targetCol < props.table.columns.length) {
-          const colId = props.table.columns[targetCol].id
+          const colId = props.table.columns[targetCol].name
           newTable.rows[targetRow][colId] = cellData
         }
       })
@@ -264,31 +573,135 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     props.onUpdate(newTable)
   }
 
-  const updateCell = (rowIndex: number, columnId: string, value: any) => {
+  // ============================================================================
+  // CELL OPERATIONS
+  // ============================================================================
+  
+  const updateCell = (rowIndex: number, columnName: string, value: any) => {
     const newRows = [...props.table.rows]
-    newRows[rowIndex] = { ...newRows[rowIndex], [columnId]: value }
+    newRows[rowIndex] = { ...newRows[rowIndex], [columnName]: value }
+    const newTable = { ...props.table, rows: newRows }
+    addToHistory(newTable)
+    props.onUpdate(newTable)
+    
+    // Revalidate the updated row
+    const updatedValidation = new Map(rowValidationStatus())
+    updatedValidation.set(rowIndex, validateRow(newRows[rowIndex], rowIndex))
+    setRowValidationStatus(updatedValidation)
+  }
+
+  const handleCellMouseDown = (e: MouseEvent, rowIndex: number, columnId: string) => {
+    if (e.shiftKey && selection()) {
+      // Extend selection
+      const sel = selection()
+      if (sel) {
+        setSelection({
+          start: sel.start,
+          end: { row: rowIndex, col: columnId }
+        })
+      }
+    } else {
+      // Start new selection
+      setSelection({
+        start: { row: rowIndex, col: columnId },
+        end: { row: rowIndex, col: columnId }
+      })
+      setIsSelecting(true)
+    }
+  }
+
+  const handleCellMouseEnter = (rowIndex: number, columnId: string) => {
+    if (isSelecting() && selection()) {
+      const sel = selection()
+      if (sel) {
+        setSelection({
+          start: sel.start,
+          end: { row: rowIndex, col: columnId }
+        })
+      }
+    }
+  }
+
+  // ============================================================================
+  // ROW OPERATIONS
+  // ============================================================================
+  
+  const addRow = () => {
+    const newRow: Record<string, any> = {}
+    props.table.columns.forEach(col => {
+      // Set default values based on column configuration
+      if (col.defaultValue !== undefined) {
+        newRow[col.name] = col.defaultValue
+      } else if (col.nullable === false) {
+        // For non-nullable columns without default, set type-appropriate empty value
+        switch (col.type) {
+          case 'string':
+            newRow[col.name] = ''
+            break
+          case 'number':
+            newRow[col.name] = 0
+            break
+          case 'boolean':
+            newRow[col.name] = false
+            break
+          default:
+            newRow[col.name] = null
+        }
+      } else {
+        newRow[col.name] = null
+      }
+    })
+    const newTable = { ...props.table, rows: [...props.table.rows, newRow] }
+    addToHistory(newTable)
+    props.onUpdate(newTable)
+    
+    // Validate the new row
+    const newRowIndex = props.table.rows.length
+    const updatedValidation = new Map(rowValidationStatus())
+    updatedValidation.set(newRowIndex, validateRow(newRow, newRowIndex))
+    setRowValidationStatus(updatedValidation)
+  }
+
+  const deleteRow = (rowIndex: number) => {
+    const newRows = [...props.table.rows]
+    newRows.splice(rowIndex, 1)
     const newTable = { ...props.table, rows: newRows }
     addToHistory(newTable)
     props.onUpdate(newTable)
   }
 
-  const addRow = () => {
-    const newRow: Record<string, any> = {}
-    props.table.columns.forEach(col => {
-      newRow[col.id] = null
+  const deleteSelectedRows = () => {
+    const rowsToDelete = Array.from(selectedRows()).sort((a, b) => b - a) // Sort descending to delete from bottom
+    const newRows = [...props.table.rows]
+    rowsToDelete.forEach(index => {
+      newRows.splice(index, 1)
     })
-    const newTable = { ...props.table, rows: [...props.table.rows, newRow] }
+    const newTable = { ...props.table, rows: newRows }
     addToHistory(newTable)
     props.onUpdate(newTable)
+    setSelectedRows(new Set())
+    setContextMenu(null)
   }
 
-  const addColumn = () => {
-    const newColumn = {
+  // ============================================================================
+  // COLUMN OPERATIONS
+  // ============================================================================
+  
+  const handleAddColumn = (columnData: Partial<Column>) => {
+    const newColumn: Column = {
       id: `col_${Date.now()}`,
-      name: `Column ${props.table.columns.length + 1}`,
-      type: newColumnType()
+      name: columnData.name || `Column ${props.table.columns.length + 1}`,
+      type: columnData.type || 'string',
+      defaultValue: columnData.defaultValue,
+      nullable: columnData.nullable
     }
-    const newRows = props.table.rows.map(row => ({ ...row, [newColumn.id]: null }))
+    
+    // Add default value to existing rows
+    const newRows = props.table.rows.map(row => ({ 
+      ...row, 
+      [newColumn.name]: columnData.defaultValue ?? (columnData.nullable ? null : getDefaultForType(newColumn.type))
+    }))
+    
     const newTable = {
       ...props.table,
       columns: [...props.table.columns, newColumn],
@@ -296,6 +709,18 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     }
     addToHistory(newTable)
     props.onUpdate(newTable)
+    setShowColumnDialog(false)
+  }
+
+  const getDefaultForType = (type: CellType): any => {
+    switch (type) {
+      case 'string': return ''
+      case 'number': return 0
+      case 'boolean': return false
+      case 'null': return null
+      case 'object': return {}
+      case 'array': return []
+    }
   }
 
   const deleteColumn = (columnId: string) => {
@@ -321,119 +746,271 @@ const TableEditor: Component<TableEditorProps> = (props) => {
   }
 
   const renameColumn = (columnId: string, newName: string) => {
+    // Find the old column name
+    const oldColumn = props.table.columns.find(col => col.id === columnId)
+    if (!oldColumn) return
+    
+    const oldName = oldColumn.name
+    
+    // Update column definition
     const newColumns = props.table.columns.map(col =>
       col.id === columnId ? { ...col, name: newName } : col
     )
-    const newTable = { ...props.table, columns: newColumns }
-    addToHistory(newTable)
-    props.onUpdate(newTable)
-  }
-
-  const deleteRow = (rowIndex: number) => {
-    const newRows = [...props.table.rows]
-    newRows.splice(rowIndex, 1)
-    const newTable = { ...props.table, rows: newRows }
-    addToHistory(newTable)
-    props.onUpdate(newTable)
-  }
-
-  const handleImportCSV = async () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.csv'
     
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0]
-      if (!file) return
-      
-      const text = await file.text()
-      const lines = text.trim().split('\n')
-      
-      if (lines.length === 0) return
-      
-      // Parse headers
-      const headers = lines[0].split(',').map(h => h.trim())
-      const columns = headers.map((name, i) => ({
-        id: `col_${Date.now()}_${i}`,
-        name,
-        type: 'string' as CellType
-      }))
-      
-      // Parse rows
-      const rows = lines.slice(1).map(line => {
-        const values = line.split(',').map(v => v.trim())
-        const row: Record<string, any> = {}
-        columns.forEach((col, i) => {
-          const value = values[i] || null
-          // Try to infer type
-          if (value === null || value === '') {
-            row[col.id] = null
-          } else if (!isNaN(Number(value))) {
-            row[col.id] = Number(value)
-          } else if (value === 'true' || value === 'false') {
-            row[col.id] = value === 'true'
-          } else {
-            row[col.id] = value
-          }
-        })
-        return row
-      })
-      
-      const newTable = {
-        ...props.table,
-        columns,
-        rows
+    // Update row data keys if the name changed
+    const newRows = props.table.rows.map(row => {
+      if (oldName !== newName && oldName in row) {
+        const newRow = { ...row }
+        newRow[newName] = newRow[oldName]
+        delete newRow[oldName]
+        return newRow
       }
+      return row
+    })
+    
+    const newTable = { ...props.table, columns: newColumns, rows: newRows }
+    addToHistory(newTable)
+    props.onUpdate(newTable)
+  }
+
+  const handleSort = (columnName: string) => {
+    if (sortColumn() === columnName) {
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortColumn(columnName)
+      setSortDirection('asc')
+    }
+  }
+
+  const handleColumnDoubleClick = (columnName: string) => {
+    // Auto-fit column width based on content
+    let maxWidth = 100
+    const rows = getSortedRows()
+    
+    // Check header width
+    maxWidth = Math.max(maxWidth, columnName.length * 10 + 40)
+    
+    // Check content width
+    rows.forEach(row => {
+      const value = String(row[columnName] || '')
+      const width = Math.min(400, value.length * 8 + 20)
+      maxWidth = Math.max(maxWidth, width)
+    })
+    
+    setColumnWidths(prev => ({ ...prev, [columnName]: maxWidth }))
+  }
+
+  const handleColumnResizeStart = (e: MouseEvent, columnName: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setResizingColumn(columnName)
+    setResizeStartX(e.clientX)
+    const currentWidth = columnWidths()[columnName] || 150
+    setResizeStartWidth(currentWidth)
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      if (resizingColumn()) {
+        const delta = e.clientX - resizeStartX()
+        const newWidth = Math.max(50, resizeStartWidth() + delta)
+        const colName = resizingColumn()
+        if (colName) {
+          setColumnWidths(prev => ({ ...prev, [colName]: newWidth }))
+        }
+      }
+    }
+    
+    const handleMouseUp = () => {
+      setResizingColumn(null)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+    
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+
+  // ============================================================================
+  // EXPORT/IMPORT OPERATIONS
+  // ============================================================================
+  
+  const handleExportCSV = () => {
+    const csv = exportToCSV(props.table)
+    downloadFile(csv, `${props.table.title}.csv`, 'text/csv')
+  }
+
+  const handleExportTSV = () => {
+    const tsv = exportToTSV(props.table)
+    downloadFile(tsv, `${props.table.title}.tsv`, 'text/tab-separated-values')
+  }
+
+  const handleExportJSON = () => {
+    const json = exportToJSON(props.table)
+    downloadFile(json, `${props.table.title}.json`, 'application/json')
+  }
+
+  // ============================================================================
+  // SEARCH OPERATIONS
+  // ============================================================================
+  
+  const handleSearch = (searchTerm: string, options: SearchOptions) => {
+    setLastSearchTerm(searchTerm)
+    
+    const rows = props.table.rows
+    const cols = props.table.columns
+    
+    let startRow = 0
+    let startCol = 0
+    
+    // If same search term, continue from last position
+    if (searchTerm === lastSearchTerm() && searchHighlight()) {
+      const highlight = searchHighlight()
+      if (!highlight) return
+      const colIndex = cols.findIndex(c => c.name === highlight.col)
+      
+      if (colIndex < cols.length - 1) {
+        startCol = colIndex + 1
+        startRow = highlight.row
+      } else {
+        startCol = 0
+        startRow = highlight.row + 1
+      }
+    }
+    
+    // Search from current position
+    for (let r = startRow; r < rows.length; r++) {
+      for (let c = (r === startRow ? startCol : 0); c < cols.length; c++) {
+        const value = String(rows[r][cols[c].name] ?? '')
+        
+        if (matchesSearch(value, searchTerm, options)) {
+          setSearchHighlight({ row: r, col: cols[c].name })
+          setSelection({
+            start: { row: r, col: cols[c].name },
+            end: { row: r, col: cols[c].name }
+          })
+          return
+        }
+      }
+    }
+    
+    // Wrap around to beginning
+    for (let r = 0; r <= startRow; r++) {
+      for (let c = 0; c < (r === startRow ? startCol : cols.length); c++) {
+        const value = String(rows[r][cols[c].name] ?? '')
+        
+        if (matchesSearch(value, searchTerm, options)) {
+          setSearchHighlight({ row: r, col: cols[c].name })
+          setSelection({
+            start: { row: r, col: cols[c].name },
+            end: { row: r, col: cols[c].name }
+          })
+          return
+        }
+      }
+    }
+    
+    // No match found
+    alert('No match found')
+  }
+
+  const handleReplace = (searchTerm: string, replaceTerm: string, options: SearchOptions) => {
+    const sel = selection()
+    if (!sel) return
+    
+    const value = String(props.table.rows[sel.start.row]?.[sel.start.col] ?? '')
+    if (matchesSearch(value, searchTerm, options)) {
+      updateCell(sel.start.row, sel.start.col, replaceTerm)
+    }
+    
+    // Find next
+    handleSearch(searchTerm, options)
+  }
+
+  const handleReplaceAll = (searchTerm: string, replaceTerm: string, options: SearchOptions) => {
+    const newTable = JSON.parse(JSON.stringify(props.table))
+    let count = 0
+    
+    newTable.rows.forEach((row: any) => {
+      newTable.columns.forEach((col: Column) => {
+        const value = String(row[col.name] ?? '')
+        if (matchesSearch(value, searchTerm, options)) {
+          row[col.name] = replaceTerm
+          count++
+        }
+      })
+    })
+    
+    if (count > 0) {
       addToHistory(newTable)
       props.onUpdate(newTable)
-    }
-    
-    input.click()
-  }
-
-  const handleCellMouseDown = (e: MouseEvent, rowIndex: number, columnId: string) => {
-    if (e.shiftKey && selection()) {
-      // Extend selection
-      setSelection({
-        start: selection()!.start,
-        end: { row: rowIndex, col: columnId }
-      })
+      alert(`Replaced ${count} occurrence(s)`)
     } else {
-      // Start new selection
-      setSelection({
-        start: { row: rowIndex, col: columnId },
-        end: { row: rowIndex, col: columnId }
-      })
-      setIsSelecting(true)
+      alert('No matches found')
     }
   }
 
-  const handleCellMouseEnter = (rowIndex: number, columnId: string) => {
-    if (isSelecting() && selection()) {
-      setSelection({
-        start: selection()!.start,
-        end: { row: rowIndex, col: columnId }
-      })
-    }
-  }
-
-  const handleMouseUp = () => {
-    setIsSelecting(false)
-  }
-
-  const isCellSelected = (rowIndex: number, columnId: string): boolean => {
-    const sel = selection()
-    if (!sel) return false
+  // ============================================================================
+  // UTILITY FUNCTIONS
+  // ============================================================================
+  
+  const matchesSearch = (value: string, searchTerm: string, options: SearchOptions): boolean => {
+    if (!searchTerm) return false
     
-    const cells = getCellsInSelection(sel)
-    return cells.some(c => c.row === rowIndex && c.col === columnId)
+    let searchValue = value
+    let searchPattern = searchTerm
+    
+    if (!options.caseSensitive) {
+      searchValue = searchValue.toLowerCase()
+      searchPattern = searchPattern.toLowerCase()
+    }
+    
+    if (options.useRegex) {
+      try {
+        const regex = new RegExp(searchPattern, options.caseSensitive ? 'g' : 'gi')
+        return regex.test(searchValue)
+      } catch {
+        return false
+      }
+    }
+    
+    if (options.wholeWord) {
+      const regex = new RegExp(`\\b${escapeRegex(searchPattern)}\\b`, options.caseSensitive ? 'g' : 'gi')
+      return regex.test(searchValue)
+    }
+    
+    return searchValue.includes(searchPattern)
   }
 
+  const escapeRegex = (str: string): string => {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  }
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+  
   return (
     <div class="p-4" onMouseUp={handleMouseUp}>
       <div class="flex items-center justify-between mb-4">
         <h2 class="text-xl font-bold">{props.table.title}</h2>
         <div class="flex items-center gap-2">
+          <button
+            class={`px-3 py-1 rounded text-sm ${
+              showFilters() ? 'bg-blue-500 text-white' : 'bg-gray-200 hover:bg-gray-300'
+            }`}
+            onClick={() => setShowFilters(!showFilters())}
+            title="Toggle filters"
+          >
+            Filter {showFilters() ? '▲' : '▼'}
+          </button>
+          {Object.values(columnFilters()).some(f => f && f.trim()) && (
+            <button
+              class="px-3 py-1 rounded text-sm bg-orange-500 text-white hover:bg-orange-600"
+              onClick={() => setColumnFilters({})}
+              title="Clear all filters"
+            >
+              Clear Filters
+            </button>
+          )}
           <div class="text-xs text-gray-500">
             History: {historyIndex() + 1}/{history().length}
           </div>
@@ -452,128 +1029,160 @@ const TableEditor: Component<TableEditorProps> = (props) => {
             Redo
           </button>
           <button
-            class="px-3 py-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
-            onClick={handleImportCSV}
+            class="px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600"
+            onClick={handleExportCSV}
           >
-            Import CSV
+            Export CSV
           </button>
-          <select
-            class="px-2 py-1 text-sm border rounded"
-            value={newColumnType()}
-            onChange={(e) => setNewColumnType(e.currentTarget.value as CellType)}
-          >
-            <For each={cellTypes}>
-              {(type) => <option value={type}>{type}</option>}
-            </For>
-          </select>
           <button
-            class="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-            onClick={addColumn}
+            class="px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600"
+            onClick={handleExportJSON}
           >
-            + Column
+            Export JSON
           </button>
         </div>
       </div>
       
-      <div class="overflow-auto border rounded">
+      <div class="overflow-auto border rounded max-h-[600px] relative">
         <table class="min-w-full select-none">
-          <thead class="bg-gray-50">
+          <thead class="bg-gray-50 sticky top-0 z-10">
             <tr>
-              <th class="w-12 px-2 py-2 border-r bg-gray-100 text-center text-xs font-medium text-gray-600">
+              <th class="w-8 px-1 py-2 border-r bg-gray-100 text-center text-xs font-medium text-gray-600">
                 #
               </th>
-              <th class="w-10 px-2 py-2 border-r"></th>
               <For each={props.table.columns}>
                 {(column) => (
-                  <th class="px-4 py-2 text-left text-sm font-medium text-gray-700 border-r group relative">
+                  <th 
+                    class="px-4 py-2 text-left text-sm font-medium text-gray-700 border-r group relative"
+                    style={{ width: `${columnWidths()[column.name] || 150}px`, position: 'relative' }}>
                     <div class="flex items-center justify-between">
-                      <Show when={editingColumnName() === column.id} fallback={
-                        <div class="flex items-center gap-2 flex-1">
-                          <span onClick={() => {
-                            setEditingColumnName(column.id)
-                            setEditingColumnValue(column.name)
-                          }} class="cursor-text hover:bg-gray-100 px-1 rounded">
-                            {column.name}
-                          </span>
-                          <span class="text-xs text-gray-500">({column.type})</span>
-                        </div>
-                      }>
-                        <input
-                          class="px-1 py-0.5 border rounded text-sm flex-1"
-                          value={editingColumnValue()}
-                          onInput={(e) => setEditingColumnValue(e.currentTarget.value)}
-                          onBlur={() => {
-                            if (editingColumnValue().trim()) {
-                              renameColumn(column.id, editingColumnValue().trim())
-                            }
-                            setEditingColumnName(null)
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              if (editingColumnValue().trim()) {
-                                renameColumn(column.id, editingColumnValue().trim())
-                              }
-                              setEditingColumnName(null)
-                            }
-                            if (e.key === 'Escape') {
-                              setEditingColumnName(null)
-                            }
-                          }}
-                          autofocus
-                        />
-                      </Show>
-                      <button
-                        class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 ml-2"
-                        onClick={() => deleteColumn(column.id)}
-                        title="Delete column"
-                      >
-                        ×
-                      </button>
+                      <div class="flex items-center gap-2 flex-1">
+                        <button
+                          onClick={() => handleSort(column.name)}
+                          onDblClick={() => handleColumnDoubleClick(column.name)}
+                          class="flex items-center gap-1 hover:bg-gray-100 px-1 rounded"
+                        >
+                          <span>{column.name}</span>
+                          {sortColumn() === column.name && (
+                            <span class="text-xs">
+                              {sortDirection() === 'asc' ? '▲' : '▼'}
+                            </span>
+                          )}
+                        </button>
+                        <span class="text-xs text-gray-500">
+                          {props.table.primaryKey?.includes(column.name) && '🔑 '}
+                          ({column.type})
+                          {column.nullable === false && ' NOT NULL'}
+                        </span>
+                      </div>
                     </div>
+                    <div
+                      class="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-blue-400"
+                      style={{ 
+                        'background-color': resizingColumn() === column.name ? 'rgb(96, 165, 250)' : 'transparent'
+                      }}
+                      onMouseDown={(e) => handleColumnResizeStart(e, column.name)}
+                    />
                   </th>
                 )}
               </For>
+              <th class="w-10 px-1 py-2 bg-gray-100 text-center text-xs font-medium text-gray-600" title="Validation Status">
+                ✓
+              </th>
             </tr>
+            {showFilters() && (
+              <tr class="bg-gray-50 sticky top-10 z-10">
+                <th class="px-2 py-1 border-r"></th>
+                <For each={props.table.columns}>
+                  {(column) => (
+                    <th class="px-2 py-1 border-r">
+                      <input
+                        type="text"
+                        class="w-full px-2 py-1 text-sm border rounded"
+                        placeholder={`Filter ${column.name}...`}
+                        value={columnFilters()[column.name] || ''}
+                        onInput={(e) => {
+                          setColumnFilters(prev => ({
+                            ...prev,
+                            [column.name]: e.currentTarget.value
+                          }))
+                        }}
+                      />
+                    </th>
+                  )}
+                </For>
+                <th class="px-2 py-1"></th>
+              </tr>
+            )}
           </thead>
           <tbody>
-            <For each={props.table.rows}>
-              {(row, rowIndex) => (
-                <tr class="border-t group">
-                  <td class="px-2 py-1 border-r bg-gray-50 text-center text-xs text-gray-600">
-                    {rowIndex() + 1}
-                  </td>
-                  <td class="px-2 py-1 border-r text-center">
-                    <button
-                      class="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 text-sm"
-                      onClick={() => deleteRow(rowIndex())}
-                      title="Delete row"
-                    >
-                      ×
-                    </button>
+            <For each={getSortedRows()}>
+              {(row, rowIndex) => {
+                const validationStatus = rowValidationStatus().get(rowIndex())
+                const isValid = validationStatus?.valid ?? true
+                const errors = validationStatus?.errors ?? []
+                
+                return (
+                <tr class={`border-t group ${!isValid ? 'bg-red-50 bg-opacity-50' : ''}`}>
+                  <td 
+                    class={`w-8 px-1 py-1 border-r text-center text-xs cursor-pointer select-none ${
+                      selectedRows().has(rowIndex()) ? 'bg-blue-200 text-blue-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      const newSelected = new Set(selectedRows())
+                      if (e.ctrlKey || e.metaKey) {
+                        if (newSelected.has(rowIndex())) {
+                          newSelected.delete(rowIndex())
+                        } else {
+                          newSelected.add(rowIndex())
+                        }
+                      } else {
+                        newSelected.clear()
+                        newSelected.add(rowIndex())
+                      }
+                      setSelectedRows(newSelected)
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      if (!selectedRows().has(rowIndex())) {
+                        const newSelected = new Set<number>()
+                        newSelected.add(rowIndex())
+                        setSelectedRows(newSelected)
+                      }
+                      setContextMenu({x: e.clientX, y: e.clientY, row: rowIndex()})
+                    }}
+                  >
+                    {isValid ? rowIndex() + 1 : '－'}
                   </td>
                   <For each={props.table.columns}>
                     {(column) => (
                       <td
+                        style={{ width: `${columnWidths()[column.name] || 150}px` }}
                         class={`px-4 py-2 border-r cursor-pointer ${
-                          isCellSelected(rowIndex(), column.id) 
+                          searchResults().some(r => r.row === rowIndex() && r.col === column.name && r.index === currentSearchIndex())
+                            ? 'bg-yellow-200'
+                            : searchResults().some(r => r.row === rowIndex() && r.col === column.name)
+                            ? 'bg-yellow-100'
+                            : isCellSelected(rowIndex(), column.name) 
                             ? 'bg-blue-100' 
                             : 'hover:bg-gray-50'
                         }`}
-                        onMouseDown={(e) => handleCellMouseDown(e, rowIndex(), column.id)}
-                        onMouseEnter={() => handleCellMouseEnter(rowIndex(), column.id)}
-                        onDblClick={() => setEditingCell({ row: rowIndex(), col: column.id })}
+                        onMouseDown={(e) => handleCellMouseDown(e, rowIndex(), column.name)}
+                        onMouseEnter={() => handleCellMouseEnter(rowIndex(), column.name)}
+                        onDblClick={() => setEditingCell({ row: rowIndex(), col: column.name })}
                       >
-                        {editingCell()?.row === rowIndex() && editingCell()?.col === column.id ? (
+                        {editingCell()?.row === rowIndex() && editingCell()?.col === column.name ? (
                           <input
                             class="w-full px-1 py-0.5 border rounded"
-                            value={row[column.id] ?? ''}
+                            value={row[column.name] ?? ''}
                             onBlur={(e) => {
-                              updateCell(rowIndex(), column.id, e.target.value)
+                              updateCell(rowIndex(), column.name, e.target.value)
                               setEditingCell(null)
                             }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
-                                updateCell(rowIndex(), column.id, e.currentTarget.value)
+                                updateCell(rowIndex(), column.name, e.currentTarget.value)
                                 setEditingCell(null)
                               }
                               if (e.key === 'Escape') {
@@ -584,17 +1193,25 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                           />
                         ) : (
                           <span class="text-sm">
-                            {row[column.id] === null ? 
+                            {row[column.name] === null ? 
                               <span class="text-gray-400">null</span> : 
-                              String(row[column.id])
+                              String(row[column.name])
                             }
                           </span>
                         )}
                       </td>
                     )}
                   </For>
+                  <td class="w-10 px-1 py-2 text-center border-l" title={errors.join('\n')}>
+                    {isValid ? (
+                      <span class="text-green-600">✓</span>
+                    ) : (
+                      <span class="text-red-600 cursor-help">⚠</span>
+                    )}
+                  </td>
                 </tr>
-              )}
+                )
+              }}
             </For>
           </tbody>
         </table>
@@ -611,6 +1228,44 @@ const TableEditor: Component<TableEditorProps> = (props) => {
           Keyboard shortcuts: ⌘C (Copy), ⌘X (Cut), ⌘V (Paste), ⌘Z (Undo), ⌘⇧Z (Redo)
         </div>
       </div>
+      
+      <ColumnDialog
+        isOpen={showColumnDialog()}
+        onClose={() => setShowColumnDialog(false)}
+        onConfirm={handleAddColumn}
+      />
+      
+      <SearchDialog
+        isOpen={showSearchDialog()}
+        onClose={() => {
+          setShowSearchDialog(false)
+          setSearchResults([])
+          setCurrentSearchIndex(-1)
+        }}
+        onSearch={handleSearch}
+        onReplace={handleReplace}
+        onReplaceAll={handleReplaceAll}
+      />
+      
+      {/* Context Menu */}
+      <Show when={contextMenu()}>
+        <div
+          class="context-menu fixed bg-white border rounded shadow-lg py-1 z-50"
+          style={{
+            left: `${contextMenu()?.x}px`,
+            top: `${contextMenu()?.y}px`
+          }}
+        >
+          <button
+            class="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm"
+            onClick={() => {
+              deleteSelectedRows()
+            }}
+          >
+            Delete {selectedRows().size} row{selectedRows().size > 1 ? 's' : ''}
+          </button>
+        </div>
+      </Show>
     </div>
   )
 }

@@ -1,11 +1,11 @@
-import { Function, Table, View } from '../models/types'
+import { AppFunction, Table, View } from '../models/types'
 
 export class FunctionEngine {
-  private functions: Map<string, Function> = new Map()
+  private functions: Map<string, AppFunction> = new Map()
   private tables: Map<string, Table> = new Map()
   private views: Map<string, View> = new Map()
 
-  setFunctions(functions: Function[]) {
+  setFunctions(functions: AppFunction[]) {
     this.functions.clear()
     functions.forEach(f => this.functions.set(f.name, f))
   }

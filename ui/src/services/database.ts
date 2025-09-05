@@ -1,4 +1,4 @@
-import { Project, Table, View, Function, Layout } from '../models/types'
+import { Project, Table, View, AppFunction, Layout } from '../models/types'
 
 const DB_NAME = 'ExcessDB'
 const DB_VERSION = 1
@@ -196,7 +196,7 @@ class Database {
   }
 
   // Function methods
-  async saveFunction(func: Function): Promise<void> {
+  async saveFunction(func: AppFunction): Promise<void> {
     const store = this.getStore('functions', 'readwrite')
     return new Promise((resolve, reject) => {
       const request = store.put(func)
@@ -205,7 +205,7 @@ class Database {
     })
   }
 
-  async getFunctionsByProject(projectId: string): Promise<Function[]> {
+  async getFunctionsByProject(projectId: string): Promise<AppFunction[]> {
     const store = this.getStore('functions')
     const index = store.index('projectId')
     
