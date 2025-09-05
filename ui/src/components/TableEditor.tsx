@@ -371,6 +371,24 @@ const TableEditor: Component<TableEditorProps> = (props) => {
           e.preventDefault()
           clearSelection()
           break
+        default:
+          // Start editing if typing a printable character
+          if (e.key.length === 1 && !ctrlKey && !e.altKey) {
+            const sel = selection()
+            if (sel && sel.start.row === sel.end.row && sel.start.col === sel.end.col) {
+              e.preventDefault()
+              setEditingCell({ row: sel.start.row, col: sel.start.col })
+              // Store the typed character to insert it into the input field
+              setTimeout(() => {
+                const input = document.querySelector('input[data-editing="true"]') as HTMLInputElement
+                if (input) {
+                  input.value = e.key
+                  input.setSelectionRange(1, 1) // Place cursor after the typed character
+                }
+              }, 0)
+            }
+          }
+          break
       }
     }
   }
@@ -622,6 +640,21 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     }
   }
 
+  // ============================================================================
+  // HELPER FUNCTIONS
+  // ============================================================================
+  
+  const parseBooleanValue = (value: any): boolean => {
+    if (value === null || value === undefined) return false
+    if (typeof value === 'boolean') return value
+    if (typeof value === 'number') return value === 1
+    if (typeof value === 'string') {
+      const lower = value.toLowerCase().trim()
+      return lower === 'true' || lower === '1' || lower === 'on' || lower === 'yes'
+    }
+    return false
+  }
+  
   // ============================================================================
   // ROW OPERATIONS
   // ============================================================================
@@ -1051,29 +1084,72 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                 #
               </th>
               <For each={props.table.columns}>
-                {(column) => (
+                {(column) => {
+                  // Find unique constraints and indexes for this column
+                  const uniqueConstraints = props.table.uniqueConstraints?.filter(uc => 
+                    uc.columns.includes(column.name)
+                  ) || []
+                  const uniqueNumbers = uniqueConstraints.map((uc, idx) => {
+                    const allUnique = props.table.uniqueConstraints || []
+                    return allUnique.indexOf(uc) + 1
+                  })
+                  
+                  const indexes = props.table.indexes?.filter(idx => 
+                    idx.columns.includes(column.name) && !idx.unique
+                  ) || []
+                  const indexNumbers = indexes.map((idx, i) => {
+                    const allIndexes = props.table.indexes || []
+                    return allIndexes.indexOf(idx) + 1
+                  })
+                  
+                  return (
                   <th 
                     class="px-4 py-2 text-left text-sm font-medium text-gray-700 border-r group relative"
                     style={{ width: `${columnWidths()[column.name] || 150}px`, position: 'relative' }}>
-                    <div class="flex items-center justify-between">
-                      <div class="flex items-center gap-2 flex-1">
+                    <div class="flex flex-col">
+                      <div class="flex items-center justify-between">
                         <button
                           onClick={() => handleSort(column.name)}
                           onDblClick={() => handleColumnDoubleClick(column.name)}
                           class="flex items-center gap-1 hover:bg-gray-100 px-1 rounded"
                         >
-                          <span>{column.name}</span>
+                          <span class="font-medium">{column.name}</span>
                           {sortColumn() === column.name && (
                             <span class="text-xs">
                               {sortDirection() === 'asc' ? '▲' : '▼'}
                             </span>
                           )}
                         </button>
+                        <div class="flex gap-1">
+                          {props.table.primaryKey?.includes(column.name) && (
+                            <span class="px-1.5 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded font-medium">PK</span>
+                          )}
+                          {uniqueNumbers.map(num => (
+                            <span class="px-1.5 py-0.5 bg-purple-100 text-purple-800 text-xs rounded font-medium">
+                              UQ{num}
+                            </span>
+                          ))}
+                          {indexNumbers.map(num => (
+                            <span class="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-xs rounded font-medium">
+                              IDX{num}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div class="flex items-center gap-2 mt-0.5">
                         <span class="text-xs text-gray-500">
-                          {props.table.primaryKey?.includes(column.name) && '🔑 '}
-                          ({column.type})
-                          {column.nullable === false && ' NOT NULL'}
+                          {column.type}
                         </span>
+                        {column.nullable === false && (
+                          <span class="text-red-500 font-bold" title="NOT NULL">
+                            *
+                          </span>
+                        )}
+                        {column.defaultValue && (
+                          <span class="text-xs text-gray-400">
+                            = {column.defaultValue}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div
@@ -1084,7 +1160,8 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                       onMouseDown={(e) => handleColumnResizeStart(e, column.name)}
                     />
                   </th>
-                )}
+                  )
+                }}
               </For>
               <th class="w-10 px-1 py-2 bg-gray-100 text-center text-xs font-medium text-gray-600" title="Validation Status">
                 ✓
@@ -1175,6 +1252,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                         {editingCell()?.row === rowIndex() && editingCell()?.col === column.name ? (
                           <input
                             class="w-full px-1 py-0.5 border rounded"
+                            data-editing="true"
                             value={row[column.name] ?? ''}
                             onBlur={(e) => {
                               updateCell(rowIndex(), column.name, e.target.value)
@@ -1191,6 +1269,18 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                             }}
                             autofocus
                           />
+                        ) : column.type === 'boolean' ? (
+                          <div class="flex items-center justify-center">
+                            <input
+                              type="checkbox"
+                              checked={parseBooleanValue(row[column.name])}
+                              onChange={(e) => {
+                                updateCell(rowIndex(), column.name, e.currentTarget.checked ? 'true' : 'false')
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            />
+                          </div>
                         ) : (
                           <span class="text-sm">
                             {row[column.name] === null ? 

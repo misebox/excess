@@ -5,6 +5,8 @@ import TextArea from './common/TextArea'
 import Select from './common/Select'
 import Checkbox from './common/Checkbox'
 import Button from './common/Button'
+import TemplateSelectDialog from './TemplateSelectDialog'
+import { TableTemplate } from '../data/tableTemplates'
 
 interface TableEditDialogProps {
   table: Table | null
@@ -25,6 +27,7 @@ const TableEditDialog: Component<TableEditDialogProps> = (props) => {
   const [newIndexColumns, setNewIndexColumns] = createSignal<string[]>([])
   const [newIndexUnique, setNewIndexUnique] = createSignal(false)
   const [showAddIndex, setShowAddIndex] = createSignal(false)
+  const [showTemplateDialog, setShowTemplateDialog] = createSignal(false)
 
   // Update signals when table prop changes
   createEffect(() => {
@@ -167,6 +170,40 @@ const TableEditDialog: Component<TableEditDialogProps> = (props) => {
     }
   }
 
+  const applyTemplate = (template: TableTemplate) => {
+    // Apply template structure, merging with existing columns if needed
+    const existingColumnNames = columns().map(c => c.name)
+    const newColumns = template.columns.filter(tc => !existingColumnNames.includes(tc.name))
+    
+    // Add new columns from template
+    setColumns(prev => [...prev, ...newColumns])
+    
+    // Merge primary keys
+    const newPrimaryKeys = template.primaryKey || []
+    setPrimaryKeys(prev => {
+      const merged = [...new Set([...prev, ...newPrimaryKeys])]
+      return merged
+    })
+    
+    // Merge unique constraints
+    if (template.uniqueConstraints) {
+      setUniqueConstraints(prev => {
+        const existingNames = prev.map(uc => uc.name)
+        const newConstraints = template.uniqueConstraints!.filter(tc => !existingNames.includes(tc.name))
+        return [...prev, ...newConstraints]
+      })
+    }
+    
+    // Merge indexes
+    if (template.indexes) {
+      setIndexes(prev => {
+        const existingNames = prev.map(i => i.name)
+        const newIndexes = template.indexes!.filter(ti => !existingNames.includes(ti.name))
+        return [...prev, ...newIndexes]
+      })
+    }
+  }
+
   const handleSave = () => {
     if (!props.table) return
     
@@ -214,6 +251,16 @@ const TableEditDialog: Component<TableEditDialogProps> = (props) => {
                 rows={2}
               />
             </div>
+          </div>
+
+          {/* Template Selection */}
+          <div class="mb-4">
+            <Button
+              variant="secondary"
+              onClick={() => setShowTemplateDialog(true)}
+            >
+              📋 Apply Template
+            </Button>
           </div>
 
           {/* Columns */}
@@ -467,6 +514,12 @@ const TableEditDialog: Component<TableEditDialogProps> = (props) => {
         </div>
       </div>
     </div>
+    
+    <TemplateSelectDialog
+      isOpen={showTemplateDialog()}
+      onClose={() => setShowTemplateDialog(false)}
+      onSelect={applyTemplate}
+    />
     </Show>
   )
 }

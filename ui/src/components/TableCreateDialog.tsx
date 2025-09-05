@@ -5,6 +5,8 @@ import TextArea from './common/TextArea'
 import Select from './common/Select'
 import Checkbox from './common/Checkbox'
 import Button from './common/Button'
+import TemplateSelectDialog from './TemplateSelectDialog'
+import { TableTemplate } from '../data/tableTemplates'
 
 interface TableCreateDialogProps {
   isOpen: boolean
@@ -30,6 +32,7 @@ const TableCreateDialog: Component<TableCreateDialogProps> = (props) => {
   const [newIndexColumns, setNewIndexColumns] = createSignal<string[]>([])
   const [newIndexUnique, setNewIndexUnique] = createSignal(false)
   const [showAddIndex, setShowAddIndex] = createSignal(false)
+  const [showTemplateDialog, setShowTemplateDialog] = createSignal(false)
 
   // Reset form when dialog opens
   createEffect(() => {
@@ -183,6 +186,14 @@ const TableCreateDialog: Component<TableCreateDialogProps> = (props) => {
     }
   }
 
+  const applyTemplate = (template: TableTemplate) => {
+    // Apply template structure
+    setColumns([...template.columns])
+    setPrimaryKeys(template.primaryKey || [])
+    setUniqueConstraints(template.uniqueConstraints || [])
+    setIndexes(template.indexes || [])
+  }
+
   const handleSave = () => {
     const newTable: Omit<Table, 'id'> = {
       title: tableName(),
@@ -228,6 +239,16 @@ const TableCreateDialog: Component<TableCreateDialogProps> = (props) => {
                 rows={2}
               />
             </div>
+          </div>
+
+          {/* Template Selection */}
+          <div class="mb-4">
+            <Button
+              variant="secondary"
+              onClick={() => setShowTemplateDialog(true)}
+            >
+              📋 Use Template
+            </Button>
           </div>
 
           {/* Columns */}
@@ -481,6 +502,12 @@ const TableCreateDialog: Component<TableCreateDialogProps> = (props) => {
         </div>
       </div>
     </div>
+    
+    <TemplateSelectDialog
+      isOpen={showTemplateDialog()}
+      onClose={() => setShowTemplateDialog(false)}
+      onSelect={applyTemplate}
+    />
     </Show>
   )
 }
