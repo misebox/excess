@@ -6,7 +6,7 @@ import TableCreateDialog from '../components/TableCreateDialog'
 import ViewEditor from '../components/ViewEditor'
 import FunctionEditor from '../components/FunctionEditor'
 import LayoutBuilder from '../components/LayoutBuilder'
-import { Table, View, AppFunction, Layout } from '../models/types'
+import { Table, View, AppFunction, Layout } from '@/models/types'
 
 interface ProjectData {
   id: string
@@ -97,10 +97,16 @@ const Project: Component = () => {
   
   const handleSelect = (id: string, type: 'table' | 'view' | 'function' | 'layout') => {
     console.log('handleSelect called:', { id, type, tables: tables() })
-    setActiveId(id)
-    setActiveType(type)
-    // Update URL
-    navigate(`/projects/${params.projectId}/${type}s/${id}`, { replace: true })
+    
+    // Navigate to dedicated table detail page for tables
+    if (type === 'table') {
+      navigate(`/projects/${params.projectId}/tables/${id}`)
+    } else {
+      setActiveId(id)
+      setActiveType(type)
+      // Update URL for other types
+      navigate(`/projects/${params.projectId}/${type}s/${id}`, { replace: true })
+    }
   }
   
   const handleRename = (id: string, type: 'table' | 'view' | 'function' | 'layout', newName: string) => {
@@ -178,7 +184,7 @@ const Project: Component = () => {
       const columns = headers.map((name, i) => ({
         id: `col_${Date.now()}_${i}`,
         name: name || `column_${i + 1}`,
-        type: 'string' as const,
+        type: 'string' as const,  // Default to string type
         nullable: true
       }))
       
@@ -197,7 +203,7 @@ const Project: Component = () => {
               row[col.name] = Number(value)
               // Update column type if all values so far are numbers
               if (columns[i].type === 'string') {
-                columns[i].type = 'number'
+                columns[i].type = value.includes('.') ? 'number' : 'number'
               }
             } else if (value === 'true' || value === 'false') {
               row[col.name] = value === 'true'
@@ -220,10 +226,16 @@ const Project: Component = () => {
       
       const newTable: Table = {
         id: `table_${Date.now()}`,
-        projectId: params.projectId,
-        title: tableName,
+        name: tableName,
+        description: `Imported from ${file.name}`,
         columns,
-        rows
+        rows,
+        primaryKey: [],
+        foreignKeys: [],
+        uniqueConstraints: [],
+        indexes: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       }
       
       setTables(prev => [...prev, newTable])
@@ -293,9 +305,10 @@ const Project: Component = () => {
         const newFunction: AppFunction = {
           id,
           name: `new_function`,
-          parameters: [],
           body: '// Write your function here\nreturn null;',
-          returnType: 'any'
+          returnType: 'any',
+          projectId: '',
+          params: []
         }
         setFunctions(prev => [...prev, newFunction])
         handleSelect(id, 'function')

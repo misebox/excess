@@ -93,7 +93,7 @@ const ColumnDialog: Component<ColumnDialogProps> = (props) => {
   if (!props.isOpen) return null
 
   return (
-    <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
       <div class="bg-white rounded-lg p-6 w-96 max-w-full">
         <h2 class="text-xl font-bold mb-4">
           {props.editingColumn ? 'Edit Column' : 'Add Column'}

@@ -3,6 +3,7 @@ import { Table, CellType, Column } from '../models/types'
 import ColumnDialog from './ColumnDialog'
 import SearchDialog, { SearchOptions } from './SearchDialog'
 import ConfirmDialog from './common/ConfirmDialog'
+import CellEditor from './CellEditor'
 import { exportToCSV, exportToTSV, exportToJSON, downloadFile } from '../utils/exportUtils'
 
 // ============================================================================
@@ -283,30 +284,9 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
     const ctrlKey = isMac ? e.metaKey : e.ctrlKey
 
-    // Don't handle keys when editing a cell
+    // Don't handle keys when editing a cell (except for navigation keys)
     if (editingCell()) {
-      if (e.key === 'Enter') {
-        e.preventDefault()
-        const input = document.querySelector('input:focus') as HTMLInputElement
-        if (input) {
-          input.blur()
-        }
-        // Move to next row
-        const sel = selection()
-        if (sel && sel.start.row < props.table.rows.length - 1) {
-          moveSelection(1, 0)
-        }
-      } else if (e.key === 'Escape') {
-        setEditingCell(null)
-      } else if (e.key === 'Tab') {
-        e.preventDefault()
-        const input = document.querySelector('input:focus') as HTMLInputElement
-        if (input) {
-          input.blur()
-        }
-        // Move to next column
-        moveSelection(0, e.shiftKey ? -1 : 1)
-      }
+      // Let the CellEditor handle Enter, Escape, and Tab
       return
     }
 
@@ -360,17 +340,11 @@ const TableEditor: Component<TableEditorProps> = (props) => {
           moveSelection(0, e.shiftKey ? -1 : 1)
           break
         case 'Enter':
+        case 'F2':
           e.preventDefault()
           const sel = selection()
           if (sel) {
             setEditingCell({ row: sel.start.row, col: sel.start.col })
-          }
-          break
-        case 'F2':
-          e.preventDefault()
-          const currentSel = selection()
-          if (currentSel) {
-            setEditingCell({ row: currentSel.start.row, col: currentSel.start.col })
           }
           break
         case 'Delete':
@@ -379,22 +353,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
           clearSelection()
           break
         default:
-          // Start editing if typing a printable character
-          if (e.key.length === 1 && !ctrlKey && !e.altKey) {
-            const sel = selection()
-            if (sel && sel.start.row === sel.end.row && sel.start.col === sel.end.col) {
-              e.preventDefault()
-              setEditingCell({ row: sel.start.row, col: sel.start.col })
-              // Store the typed character to insert it into the input field
-              setTimeout(() => {
-                const input = document.querySelector('input[data-editing="true"]') as HTMLInputElement
-                if (input) {
-                  input.value = e.key
-                  input.setSelectionRange(1, 1) // Place cursor after the typed character
-                }
-              }, 0)
-            }
-          }
+          // No longer start editing on character input
           break
       }
     }
@@ -1142,7 +1101,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
         <table class="min-w-full select-none">
           <thead class="bg-gray-50 sticky top-0 z-10">
             <tr>
-              <th class="border-r bg-gray-100 text-center text-xs font-medium text-gray-600" style="width: 60px; min-width: 60px; max-width: 60px;">
+              <th class="border-r bg-gray-100 text-center text-xs font-medium text-gray-600" style="width: 40px; min-width: 40px; max-width: 40px;">
                 #
               </th>
               <For each={props.table.columns}>
@@ -1233,7 +1192,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                   )
                 }}
               </For>
-              <th class="bg-gray-100 text-center text-xs font-medium text-gray-600" style="width: 40px; min-width: 40px; max-width: 40px;" title="Validation Status">
+              <th class="bg-gray-100 text-center text-xs font-medium text-gray-600" style="width: 30px; min-width: 30px; max-width: 30px;" title="Validation Status">
                 ✓
               </th>
             </tr>
@@ -1270,12 +1229,12 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                 const errors = validationStatus?.errors ?? []
                 
                 return (
-                <tr class={`border-t group ${!isValid ? 'bg-red-50 bg-opacity-50' : ''}`}>
+                <tr class={`border-t group ${!isValid ? 'bg-red-50/50' : ''}`}>
                   <td 
                     class={`border-r text-center text-xs cursor-pointer select-none ${
                       selectedRows().has(rowIndex()) ? 'bg-blue-200 text-blue-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                     }`}
-                    style="width: 60px; min-width: 60px; max-width: 60px; padding: 4px;"
+                    style="width: 40px; min-width: 40px; max-width: 40px; padding: 2px;"
                     onClick={(e) => {
                       e.stopPropagation()
                       const newSelected = new Set(selectedRows())
@@ -1304,41 +1263,36 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                     {isValid ? rowIndex() + 1 : '－'}
                   </td>
                   <For each={props.table.columns}>
-                    {(column) => (
+                    {(column) => {
+                      const currentRowIndex = rowIndex() // Capture the current row index
+                      return (
                       <td
                         style={{ width: `${columnWidths()[column.name] || 150}px` }}
                         class={`p-1 border-r cursor-pointer ${
-                          searchResults().some(r => r.row === rowIndex() && r.col === column.name && r.index === currentSearchIndex())
+                          searchResults().some(r => r.row === currentRowIndex && r.col === column.name && r.index === currentSearchIndex())
                             ? 'bg-yellow-200'
-                            : searchResults().some(r => r.row === rowIndex() && r.col === column.name)
+                            : searchResults().some(r => r.row === currentRowIndex && r.col === column.name)
                             ? 'bg-yellow-100'
-                            : isCellSelected(rowIndex(), column.name) 
+                            : isCellSelected(currentRowIndex, column.name) 
                             ? 'bg-blue-100' 
                             : 'hover:bg-gray-50'
                         }`}
-                        onMouseDown={(e) => handleCellMouseDown(e, rowIndex(), column.name)}
-                        onMouseEnter={() => handleCellMouseEnter(rowIndex(), column.name)}
-                        onDblClick={() => setEditingCell({ row: rowIndex(), col: column.name })}
+                        onMouseDown={(e) => handleCellMouseDown(e, currentRowIndex, column.name)}
+                        onMouseEnter={() => handleCellMouseEnter(currentRowIndex, column.name)}
+                        onDblClick={() => setEditingCell({ row: currentRowIndex, col: column.name })}
                       >
-                        {editingCell()?.row === rowIndex() && editingCell()?.col === column.name ? (
-                          <input
-                            class="w-full px-1 py-0.5 border rounded"
-                            data-editing="true"
-                            value={row[column.name] ?? ''}
-                            onBlur={(e) => {
-                              updateCell(rowIndex(), column.name, e.target.value)
+                        {editingCell()?.row === currentRowIndex && editingCell()?.col === column.name ? (
+                          <CellEditor
+                            initialValue={row[column.name]}
+                            onSave={(value) => {
+                              // First clear the editing state
                               setEditingCell(null)
+                              // Then update the cell value
+                              setTimeout(() => {
+                                updateCell(currentRowIndex, column.name, value)
+                              }, 0)
                             }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                updateCell(rowIndex(), column.name, e.currentTarget.value)
-                                setEditingCell(null)
-                              }
-                              if (e.key === 'Escape') {
-                                setEditingCell(null)
-                              }
-                            }}
-                            autofocus
+                            onCancel={() => setEditingCell(null)}
                           />
                         ) : column.type === 'boolean' ? (
                           <div class="flex items-center justify-center">
@@ -1346,7 +1300,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                               type="checkbox"
                               checked={parseBooleanValue(row[column.name])}
                               onChange={(e) => {
-                                updateCell(rowIndex(), column.name, e.currentTarget.checked ? 'true' : 'false')
+                                updateCell(currentRowIndex, column.name, e.currentTarget.checked ? 'true' : 'false')
                               }}
                               onClick={(e) => e.stopPropagation()}
                               class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -1361,9 +1315,10 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                           </span>
                         )}
                       </td>
-                    )}
+                      )
+                    }}
                   </For>
-                  <td class="text-center border-l" style="width: 40px; min-width: 40px; max-width: 40px; padding: 4px;" title={errors.join('\n')}>
+                  <td class="text-center border-l" style="width: 30px; min-width: 30px; max-width: 30px; padding: 2px;" title={errors.join('\n')}>
                     {isValid ? (
                       <span class="text-green-600">✓</span>
                     ) : (

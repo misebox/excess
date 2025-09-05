@@ -211,7 +211,7 @@ const TableCreateDialog: Component<TableCreateDialogProps> = (props) => {
 
   return (
     <Show when={props.isOpen}>
-      <div class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center" style="z-index: 99999;">
+      <div class="fixed inset-0 bg-black/30 flex items-center justify-center" style="z-index: 99999;">
         <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <div class="px-6 py-4 border-b">
           <h2 class="text-xl font-bold">Create New Table</h2>

@@ -27,7 +27,7 @@ const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
   return (
     <Show when={props.isOpen}>
       <div 
-        class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center" 
+        class="fixed inset-0 bg-black/30 flex items-center justify-center" 
         style="z-index: 100000;"
         onClick={props.onCancel}
       >

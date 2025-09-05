@@ -61,7 +61,7 @@ const SearchDialog: Component<SearchDialogProps> = (props) => {
   if (!props.isOpen) return null
 
   return (
-    <div class="fixed inset-0 bg-black bg-opacity-25 flex items-start justify-center pt-20 z-50">
+    <div class="fixed inset-0 bg-black/30 flex items-start justify-center pt-20 z-50">
       <div 
         class="bg-white rounded-lg shadow-xl p-4 w-96 max-w-full"
         onKeyDown={handleKeyDown}
