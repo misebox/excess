@@ -127,7 +127,7 @@ const ViewEditor: Component<ViewEditorProps> = (props) => {
                 <tr>
                   <For each={queryResult().columns}>
                     {(column) => (
-                      <th class="px-4 py-2 text-left text-sm font-medium text-gray-700 border-b border-r">
+                      <th class="p-1 text-left text-sm font-medium text-gray-700 border-b border-r">
                         {column}
                       </th>
                     )}
@@ -139,7 +139,7 @@ const ViewEditor: Component<ViewEditorProps> = (props) => {
                   <tr>
                     <td 
                       colspan={queryResult().columns.length || 1} 
-                      class="px-4 py-8 text-center text-gray-500"
+                      class="p-1 text-center text-gray-500"
                     >
                       No results found
                     </td>
@@ -150,7 +150,7 @@ const ViewEditor: Component<ViewEditorProps> = (props) => {
                     <tr class="border-b hover:bg-gray-50">
                       <For each={queryResult().columns}>
                         {(column) => (
-                          <td class="px-4 py-2 text-sm border-r">
+                          <td class="p-1 text-sm border-r">
                             {formatCellValue(row[column])}
                           </td>
                         )}

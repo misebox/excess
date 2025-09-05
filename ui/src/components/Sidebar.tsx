@@ -81,10 +81,12 @@ const Sidebar: Component<SidebarProps> = (props) => {
         }}
       >
         <span class="text-sm">{config.icon}</span>
-        <span class="text-sm flex-1">{item.title || item.name}</span>
+        <span class="text-sm flex-1 truncate pr-2" title={item.title || item.name}>
+          {item.title || item.name}
+        </span>
         {type === 'table' && (
           <button
-            class="px-2 py-0.5 text-xs bg-white hover:bg-blue-50 border border-gray-300 hover:border-blue-400 text-gray-600 hover:text-blue-600 rounded transition-all duration-150 active:scale-95 cursor-pointer"
+            class="px-2 py-0.5 text-xs bg-white hover:bg-blue-50 border border-gray-300 hover:border-blue-400 text-gray-600 hover:text-blue-600 rounded transition-all duration-150 active:scale-95 cursor-pointer flex-shrink-0"
             onClick={(e) => {
               e.stopPropagation()
               setEditingTable(item as Table)
@@ -129,7 +131,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
   }
 
   return (
-    <div class="w-64 bg-gray-50 border-r h-full overflow-y-auto">
+    <div class="h-full">
       <div class="p-4">
         {renderSection('Tables', props.tables, 'table')}
         {renderSection('Views', props.views, 'view')}

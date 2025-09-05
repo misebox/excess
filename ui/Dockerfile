@@ -8,19 +8,37 @@ FROM oven/bun:1-alpine as base
 WORKDIR /app
 
 ################################################################################
-# Dependencies stage - cache npm packages
-FROM base as deps
-
-# Copy only package files first (most stable layer)
-COPY package.json bun.lockb* ./
-RUN bun install --frozen-lockfile
-
-################################################################################
 # Development dependencies stage
 FROM base as dev-deps
 
 # Copy only package files first
-COPY package.json bun.lockb* ./
+COPY package.json ./
+RUN bun install
+
+################################################################################
+# Development stage
+FROM base as development
+WORKDIR /app
+
+# Copy dependencies from dev-deps stage (cached)
+COPY --from=dev-deps /app/node_modules ./node_modules
+COPY package.json ./
+
+# Copy everything else for development
+# This layer will rebuild when any file changes, but deps are cached
+COPY . .
+
+EXPOSE 5173
+
+# Start Vite dev server
+CMD ["bun", "run", "dev", "--host", "0.0.0.0"]
+
+################################################################################
+# Dependencies stage - cache npm packages
+FROM base as deps
+
+# Copy only package files first (most stable layer)
+COPY package.json ./
 RUN bun install
 
 ################################################################################
@@ -29,7 +47,7 @@ FROM base as build
 
 # Copy dependencies from deps stage (cached)
 COPY --from=deps /app/node_modules ./node_modules
-COPY package.json bun.lockb* ./
+COPY package.json ./
 
 # Copy source files separately to maximize cache
 # Configuration files (rarely change)
@@ -49,24 +67,6 @@ COPY src ./src
 
 # Build the application
 RUN bun run build
-
-################################################################################
-# Development stage
-FROM base as development
-WORKDIR /app
-
-# Copy dependencies from dev-deps stage (cached)
-COPY --from=dev-deps /app/node_modules ./node_modules
-COPY package.json bun.lockb* ./
-
-# Copy everything else for development
-# This layer will rebuild when any file changes, but deps are cached
-COPY . .
-
-EXPOSE 5173
-
-# Start Vite dev server
-CMD ["bun", "run", "dev", "--host", "0.0.0.0"]
 
 ################################################################################
 # Production stage

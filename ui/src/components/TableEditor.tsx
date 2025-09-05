@@ -2,6 +2,7 @@ import { Component, For, createSignal, Show, onMount, onCleanup, createMemo, cre
 import { Table, CellType, Column } from '../models/types'
 import ColumnDialog from './ColumnDialog'
 import SearchDialog, { SearchOptions } from './SearchDialog'
+import ConfirmDialog from './common/ConfirmDialog'
 import { exportToCSV, exportToTSV, exportToJSON, downloadFile } from '../utils/exportUtils'
 
 // ============================================================================
@@ -58,6 +59,12 @@ const TableEditor: Component<TableEditorProps> = (props) => {
   const [showColumnDialog, setShowColumnDialog] = createSignal(false)
   const [showSearchDialog, setShowSearchDialog] = createSignal(false)
   const [showFilters, setShowFilters] = createSignal(false)
+  const [columnToDelete, setColumnToDelete] = createSignal<Column | null>(null)
+  const [columnContextMenu, setColumnContextMenu] = createSignal<{
+    x: number
+    y: number
+    column: Column
+  } | null>(null)
   
   // Clipboard and history state
   const [clipboard, setClipboard] = createSignal<any[][]>([])
@@ -744,6 +751,61 @@ const TableEditor: Component<TableEditorProps> = (props) => {
     props.onUpdate(newTable)
     setShowColumnDialog(false)
   }
+  
+  const handleDeleteColumn = (column: Column) => {
+    const newTable = { ...props.table }
+    
+    // Remove column from columns array
+    newTable.columns = newTable.columns.filter(c => c.id !== column.id)
+    
+    // Remove column data from all rows
+    newTable.rows = newTable.rows.map(row => {
+      const newRow = { ...row }
+      delete newRow[column.name]
+      return newRow
+    })
+    
+    // Remove column from primary keys
+    if (newTable.primaryKey) {
+      newTable.primaryKey = newTable.primaryKey.filter(pk => pk !== column.name)
+      if (newTable.primaryKey.length === 0) {
+        delete newTable.primaryKey
+      }
+    }
+    
+    // Remove column from unique constraints
+    if (newTable.uniqueConstraints) {
+      newTable.uniqueConstraints = newTable.uniqueConstraints
+        .map(uc => ({
+          ...uc,
+          columns: uc.columns.filter(c => c !== column.name)
+        }))
+        .filter(uc => uc.columns.length > 0) // Remove empty constraints
+      
+      if (newTable.uniqueConstraints.length === 0) {
+        delete newTable.uniqueConstraints
+      }
+    }
+    
+    // Remove column from indexes
+    if (newTable.indexes) {
+      newTable.indexes = newTable.indexes
+        .map(idx => ({
+          ...idx,
+          columns: idx.columns.filter(c => c !== column.name)
+        }))
+        .filter(idx => idx.columns.length > 0) // Remove empty indexes
+      
+      if (newTable.indexes.length === 0) {
+        delete newTable.indexes
+      }
+    }
+    
+    addToHistory(newTable)
+    props.onUpdate(newTable)
+    setColumnToDelete(null)
+    setColumnContextMenu(null)
+  }
 
   const getDefaultForType = (type: CellType): any => {
     switch (type) {
@@ -1080,7 +1142,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
         <table class="min-w-full select-none">
           <thead class="bg-gray-50 sticky top-0 z-10">
             <tr>
-              <th class="w-8 px-1 py-2 border-r bg-gray-100 text-center text-xs font-medium text-gray-600">
+              <th class="border-r bg-gray-100 text-center text-xs font-medium text-gray-600" style="width: 60px; min-width: 60px; max-width: 60px;">
                 #
               </th>
               <For each={props.table.columns}>
@@ -1104,8 +1166,16 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                   
                   return (
                   <th 
-                    class="px-4 py-2 text-left text-sm font-medium text-gray-700 border-r group relative"
-                    style={{ width: `${columnWidths()[column.name] || 150}px`, position: 'relative' }}>
+                    class="p-1 text-left text-sm font-medium text-gray-700 border-r group relative"
+                    style={{ width: `${columnWidths()[column.name] || 150}px`, position: 'relative' }}
+                    onContextMenu={(e) => {
+                      e.preventDefault()
+                      setColumnContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        column
+                      })
+                    }}>
                     <div class="flex flex-col">
                       <div class="flex items-center justify-between">
                         <button
@@ -1163,16 +1233,16 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                   )
                 }}
               </For>
-              <th class="w-10 px-1 py-2 bg-gray-100 text-center text-xs font-medium text-gray-600" title="Validation Status">
+              <th class="bg-gray-100 text-center text-xs font-medium text-gray-600" style="width: 40px; min-width: 40px; max-width: 40px;" title="Validation Status">
                 ✓
               </th>
             </tr>
             {showFilters() && (
               <tr class="bg-gray-50 sticky top-10 z-10">
-                <th class="px-2 py-1 border-r"></th>
+                <th class="p-1 border-r"></th>
                 <For each={props.table.columns}>
                   {(column) => (
-                    <th class="px-2 py-1 border-r">
+                    <th class="p-1 border-r">
                       <input
                         type="text"
                         class="w-full px-2 py-1 text-sm border rounded"
@@ -1188,7 +1258,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                     </th>
                   )}
                 </For>
-                <th class="px-2 py-1"></th>
+                <th class="p-1"></th>
               </tr>
             )}
           </thead>
@@ -1202,9 +1272,10 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                 return (
                 <tr class={`border-t group ${!isValid ? 'bg-red-50 bg-opacity-50' : ''}`}>
                   <td 
-                    class={`w-8 px-1 py-1 border-r text-center text-xs cursor-pointer select-none ${
+                    class={`border-r text-center text-xs cursor-pointer select-none ${
                       selectedRows().has(rowIndex()) ? 'bg-blue-200 text-blue-800' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                     }`}
+                    style="width: 60px; min-width: 60px; max-width: 60px; padding: 4px;"
                     onClick={(e) => {
                       e.stopPropagation()
                       const newSelected = new Set(selectedRows())
@@ -1236,7 +1307,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                     {(column) => (
                       <td
                         style={{ width: `${columnWidths()[column.name] || 150}px` }}
-                        class={`px-4 py-2 border-r cursor-pointer ${
+                        class={`p-1 border-r cursor-pointer ${
                           searchResults().some(r => r.row === rowIndex() && r.col === column.name && r.index === currentSearchIndex())
                             ? 'bg-yellow-200'
                             : searchResults().some(r => r.row === rowIndex() && r.col === column.name)
@@ -1292,7 +1363,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                       </td>
                     )}
                   </For>
-                  <td class="w-10 px-1 py-2 text-center border-l" title={errors.join('\n')}>
+                  <td class="text-center border-l" style="width: 40px; min-width: 40px; max-width: 40px; padding: 4px;" title={errors.join('\n')}>
                     {isValid ? (
                       <span class="text-green-600">✓</span>
                     ) : (
@@ -1337,7 +1408,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
         onReplaceAll={handleReplaceAll}
       />
       
-      {/* Context Menu */}
+      {/* Row Context Menu */}
       <Show when={contextMenu()}>
         <div
           class="context-menu fixed bg-white border rounded shadow-lg py-1 z-50"
@@ -1356,6 +1427,53 @@ const TableEditor: Component<TableEditorProps> = (props) => {
           </button>
         </div>
       </Show>
+      
+      {/* Column Context Menu */}
+      <Show when={columnContextMenu()}>
+        <div
+          class="fixed bg-white border rounded shadow-lg py-1 z-50"
+          style={{
+            left: `${columnContextMenu()?.x}px`,
+            top: `${columnContextMenu()?.y}px`,
+            "z-index": 100001
+          }}
+        >
+          <button
+            class="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm text-red-600"
+            onClick={() => {
+              setColumnToDelete(columnContextMenu()!.column)
+              setColumnContextMenu(null)
+            }}
+          >
+            Delete Column
+          </button>
+        </div>
+      </Show>
+      
+      {/* Overlay to close context menus */}
+      <Show when={columnContextMenu()}>
+        <div
+          class="fixed inset-0"
+          style="z-index: 100000;"
+          onClick={() => setColumnContextMenu(null)}
+        />
+      </Show>
+      
+      {/* Column Delete Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={columnToDelete() !== null}
+        title="Delete Column"
+        message={`Are you sure you want to delete the column "${columnToDelete()?.name}"? This will remove the column from the table structure and delete all data in this column. This action cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          if (columnToDelete()) {
+            handleDeleteColumn(columnToDelete()!)
+          }
+        }}
+        onCancel={() => setColumnToDelete(null)}
+      />
     </div>
   )
 }

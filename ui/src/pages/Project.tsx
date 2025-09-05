@@ -36,6 +36,10 @@ const Project: Component = () => {
   // State for create dialog
   const [showCreateTableDialog, setShowCreateTableDialog] = createSignal(false)
   
+  // State for sidebar width
+  const [sidebarWidth, setSidebarWidth] = createSignal(256) // 16rem = 256px
+  const [isResizing, setIsResizing] = createSignal(false)
+  
   // Load project data on mount
   onMount(() => {
     // Load project metadata
@@ -241,6 +245,27 @@ const Project: Component = () => {
     handleSelect(id, 'table')
   }
   
+  // Handle sidebar resize
+  const handleMouseDown = (e: MouseEvent) => {
+    e.preventDefault()
+    setIsResizing(true)
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isResizing()) return
+      const newWidth = Math.max(200, Math.min(480, e.clientX))
+      setSidebarWidth(newWidth)
+    }
+    
+    const handleMouseUp = () => {
+      setIsResizing(false)
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    }
+    
+    document.addEventListener('mousemove', handleMouseMove)
+    document.addEventListener('mouseup', handleMouseUp)
+  }
+  
   // Add a new item
   const handleAddNew = (type: 'table' | 'view' | 'function' | 'layout') => {
     const id = `${type}_${Date.now()}`
@@ -311,18 +336,32 @@ const Project: Component = () => {
       </header>
       
       <div class="flex-1 flex overflow-hidden">
-        <Sidebar
-          tables={tables()}
-          views={views()}
-          functions={functions()}
-          layouts={layouts()}
-          activeId={activeId()}
-          activeType={activeType()}
-          onSelect={handleSelect}
-          onRename={handleRename}
-          onUpdateTable={handleUpdateTable}
-          onAddNew={handleAddNew}
-          onDelete={handleDelete}
+        <div 
+          class="bg-gray-50 border-r h-full overflow-y-auto relative"
+          style={{ width: `${sidebarWidth()}px` }}
+        >
+          <Sidebar
+            tables={tables()}
+            views={views()}
+            functions={functions()}
+            layouts={layouts()}
+            activeId={activeId()}
+            activeType={activeType()}
+            onSelect={handleSelect}
+            onRename={handleRename}
+            onUpdateTable={handleUpdateTable}
+            onAddNew={handleAddNew}
+            onDelete={handleDelete}
+          />
+        </div>
+        
+        {/* Resize handle */}
+        <div
+          class={`w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize transition-colors ${
+            isResizing() ? 'bg-blue-500' : ''
+          }`}
+          onMouseDown={handleMouseDown}
+          style={{ "user-select": "none" }}
         />
         
         <main class="flex-1 overflow-auto bg-white">
