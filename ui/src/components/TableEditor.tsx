@@ -4,6 +4,7 @@ import ColumnDialog from './ColumnDialog'
 import SearchDialog, { SearchOptions } from './SearchDialog'
 import ConfirmDialog from './common/ConfirmDialog'
 import CellEditor from './CellEditor'
+import DateTimeEditor from './DateTimeEditor'
 import { exportToCSV, exportToTSV, exportToJSON, downloadFile } from '../utils/exportUtils'
 
 // ============================================================================
@@ -97,16 +98,19 @@ const TableEditor: Component<TableEditorProps> = (props) => {
   const [rowValidationStatus, setRowValidationStatus] = createSignal<Map<number, { valid: boolean, errors: string[] }>>(new Map())
   
   // Validate a single row
-  const validateRow = (row: Record<string, any>, rowIndex: number): { valid: boolean, errors: string[] } => {
+  const validateRow = (row: Record<string, any>, rowIndex: number): { valid: boolean, errors: string[], invalidColumns: Set<string> } => {
     const errors: string[] = []
+    const invalidColumns = new Set<string>()
     
     // Check each column's constraints
     props.table.columns.forEach(column => {
       const value = row[column.name]
+      let hasError = false
       
       // Check nullable constraint
       if (column.nullable === false && (value === null || value === undefined || value === '')) {
         errors.push(`${column.name} is required`)
+        hasError = true
       }
       
       // Check type constraints
@@ -115,11 +119,13 @@ const TableEditor: Component<TableEditorProps> = (props) => {
           case 'number':
             if (typeof value !== 'number' && isNaN(Number(value))) {
               errors.push(`${column.name} must be a number`)
+              hasError = true
             }
             break
           case 'boolean':
-            if (typeof value !== 'boolean') {
+            if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
               errors.push(`${column.name} must be true or false`)
+              hasError = true
             }
             break
           case 'date':
@@ -127,18 +133,23 @@ const TableEditor: Component<TableEditorProps> = (props) => {
             // Basic date validation
             if (typeof value === 'string' && !Date.parse(value)) {
               errors.push(`${column.name} must be a valid date`)
+              hasError = true
             }
             break
         }
       }
+      
+      if (hasError) {
+        invalidColumns.add(column.name)
+      }
     })
     
-    return { valid: errors.length === 0, errors }
+    return { valid: errors.length === 0, errors, invalidColumns }
   }
   
   // Validate all rows
   const validateAllRows = () => {
-    const newValidationStatus = new Map<number, { valid: boolean, errors: string[] }>()
+    const newValidationStatus = new Map<number, { valid: boolean, errors: string[], invalidColumns: Set<string> }>()
     props.table.rows.forEach((row, index) => {
       newValidationStatus.set(index, validateRow(row, index))
     })
@@ -609,6 +620,23 @@ const TableEditor: Component<TableEditorProps> = (props) => {
   // ============================================================================
   // HELPER FUNCTIONS
   // ============================================================================
+  
+  // Format date/datetime for display
+  const formatDateTime = (value: any, type: 'date' | 'datetime'): string => {
+    if (!value) return ''
+    try {
+      const date = new Date(value)
+      if (isNaN(date.getTime())) return String(value)
+      
+      if (type === 'date') {
+        return date.toLocaleDateString()
+      } else {
+        return date.toLocaleString()
+      }
+    } catch {
+      return String(value)
+    }
+  }
   
   const parseBooleanValue = (value: any): boolean => {
     if (value === null || value === undefined) return false
@@ -1265,6 +1293,7 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                   <For each={props.table.columns}>
                     {(column) => {
                       const currentRowIndex = rowIndex() // Capture the current row index
+                      const isInvalidCell = validationStatus?.invalidColumns?.has(column.name) || false
                       return (
                       <td
                         style={{ width: `${columnWidths()[column.name] || 150}px` }}
@@ -1274,7 +1303,9 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                             : searchResults().some(r => r.row === currentRowIndex && r.col === column.name)
                             ? 'bg-yellow-100'
                             : isCellSelected(currentRowIndex, column.name) 
-                            ? 'bg-blue-100' 
+                            ? 'bg-blue-100'
+                            : isInvalidCell
+                            ? 'bg-red-100'
                             : 'hover:bg-gray-50'
                         }`}
                         onMouseDown={(e) => handleCellMouseDown(e, currentRowIndex, column.name)}
@@ -1282,18 +1313,30 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                         onDblClick={() => setEditingCell({ row: currentRowIndex, col: column.name })}
                       >
                         {editingCell()?.row === currentRowIndex && editingCell()?.col === column.name ? (
-                          <CellEditor
-                            initialValue={row[column.name]}
-                            onSave={(value) => {
-                              // First clear the editing state
-                              setEditingCell(null)
-                              // Then update the cell value
-                              setTimeout(() => {
-                                updateCell(currentRowIndex, column.name, value)
-                              }, 0)
-                            }}
-                            onCancel={() => setEditingCell(null)}
-                          />
+                          column.type === 'date' || column.type === 'datetime' ? (
+                            <DateTimeEditor
+                              initialValue={row[column.name]}
+                              type={column.type}
+                              onSave={(value) => {
+                                setEditingCell(null)
+                                setTimeout(() => {
+                                  updateCell(currentRowIndex, column.name, value)
+                                }, 0)
+                              }}
+                              onCancel={() => setEditingCell(null)}
+                            />
+                          ) : (
+                            <CellEditor
+                              initialValue={row[column.name]}
+                              onSave={(value) => {
+                                setEditingCell(null)
+                                setTimeout(() => {
+                                  updateCell(currentRowIndex, column.name, value)
+                                }, 0)
+                              }}
+                              onCancel={() => setEditingCell(null)}
+                            />
+                          )
                         ) : column.type === 'boolean' ? (
                           <div class="flex items-center justify-center">
                             <input
@@ -1310,7 +1353,9 @@ const TableEditor: Component<TableEditorProps> = (props) => {
                           <span class="text-sm">
                             {row[column.name] === null ? 
                               <span class="text-gray-400">null</span> : 
-                              String(row[column.name])
+                              column.type === 'datetime' || column.type === 'date' ? 
+                                formatDateTime(row[column.name], column.type) :
+                                String(row[column.name])
                             }
                           </span>
                         )}

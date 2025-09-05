@@ -80,10 +80,29 @@ export interface Layout {
 
 export interface LayoutElement {
   id: string
-  type: 'table' | 'view' | 'function' | 'text' | 'chart'
+  type: 'table' | 'view' | 'function' | 'text' | 'chart' | 'tableView'
   gridPosition: { col: number; row: number }
   gridSize: { cols: number; rows: number }
   data: any
+}
+
+export interface FilterCondition {
+  column: string
+  operator: 'equals' | 'not_equals' | 'contains' | 'starts_with' | 'ends_with' | 'greater' | 'less' | 'greater_equal' | 'less_equal' | 'is_null' | 'is_not_null'
+  value?: any
+}
+
+export interface SortCondition {
+  column: string
+  direction: 'asc' | 'desc'
+}
+
+export interface TableViewSettings {
+  tableId: string
+  selectedColumns?: string[]  // null means all columns
+  filters?: FilterCondition[]
+  sortBy?: SortCondition[]
+  limit?: number
 }
 
 export type TabType = 'table' | 'view' | 'function' | 'layout'

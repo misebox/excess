@@ -1,9 +1,12 @@
-import { Component, For, createSignal, onMount, onCleanup, Show } from 'solid-js'
-import { Layout, LayoutElement } from '../models/types'
+import { Component, For, createSignal, onMount, onCleanup, Show, createEffect } from 'solid-js'
+import { Layout, LayoutElement, Table, TableViewSettings } from '../models/types'
+import TableView from './TableView'
+import TableViewSettingsDialog from './TableViewSettings'
 
 interface LayoutBuilderProps {
   layout: Layout
   onUpdate: (layout: Layout) => void
+  tables?: Table[]  // Available tables for TableView
 }
 
 const GRID_SIZE = 30 // pixels per grid cell
@@ -17,6 +20,10 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   const [resizeStart, setResizeStart] = createSignal({ width: 0, height: 0, x: 0, y: 0 })
   const [isDragOver, setIsDragOver] = createSignal(false)
   const [dropPreview, setDropPreview] = createSignal<{x: number, y: number} | null>(null)
+  const [isEditingTitle, setIsEditingTitle] = createSignal(false)
+  const [editedTitle, setEditedTitle] = createSignal(props.layout.title || '')
+  const [settingsElement, setSettingsElement] = createSignal<LayoutElement | null>(null)
+  const [settingsTable, setSettingsTable] = createSignal<Table | null>(null)
   
   let containerRef: HTMLDivElement | undefined
 
@@ -158,7 +165,19 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
         const col = Math.max(0, Math.min(GRID_COLS - 6, Math.floor(x / GRID_SIZE)))
         const row = Math.max(0, Math.min(GRID_ROWS - 4, Math.floor(y / GRID_SIZE)))
         
-        addElement(data.type, data, { col, row })
+        // If dropping a table, create a TableView element
+        if (data.type === 'table' && data.id) {
+          const tableViewSettings: TableViewSettings = {
+            tableId: data.id,
+            selectedColumns: undefined,  // Show all columns by default
+            filters: undefined,
+            sortBy: undefined,
+            limit: undefined
+          }
+          addElement('tableView', { ...data, settings: tableViewSettings }, { col, row })
+        } else {
+          addElement(data.type, data, { col, row })
+        }
       }
     } catch (error) {
       console.error('Failed to handle drop:', error)
@@ -188,6 +207,7 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   const getElementTypeIcon = (type: string) => {
     const icons: Record<string, string> = {
       table: '⊞',
+      tableView: '📋',
       view: '👁',
       function: 'ƒ',
       text: 'T',
@@ -197,15 +217,87 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   }
 
   const getElementDisplayName = (element: LayoutElement) => {
+    if (element.type === 'tableView' && element.data) {
+      return `Table: ${element.data.title || element.data.name || 'Unknown'}`
+    }
     if (element.data) {
       return element.data.title || element.data.name || element.type
     }
     return element.type
   }
+  
+  const openSettings = (element: LayoutElement) => {
+    if (element.type === 'tableView') {
+      const table = props.tables?.find(t => t.id === element.data?.settings?.tableId)
+      if (table) {
+        setSettingsTable(table)
+        setSettingsElement(element)
+      }
+    }
+  }
+  
+  const handleSettingsSave = (settings: TableViewSettings) => {
+    const element = settingsElement()
+    if (element) {
+      props.onUpdate({
+        ...props.layout,
+        elements: props.layout.elements.map(el =>
+          el.id === element.id
+            ? { ...el, data: { ...el.data, settings } }
+            : el
+        )
+      })
+    }
+    setSettingsElement(null)
+    setSettingsTable(null)
+  }
+
+  const handleTitleSave = () => {
+    props.onUpdate({
+      ...props.layout,
+      title: editedTitle()
+    })
+    setIsEditingTitle(false)
+  }
+
+  const handleTitleKeyDown = (e: KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleTitleSave()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      setEditedTitle(props.layout.title || '')
+      setIsEditingTitle(false)
+    }
+  }
 
   return (
     <div class="p-4 h-full flex flex-col">
-      <h2 class="text-xl font-bold mb-4">{props.layout.title}</h2>
+      <div class="mb-4">
+        {isEditingTitle() ? (
+          <input
+            type="text"
+            value={editedTitle()}
+            onInput={(e) => setEditedTitle(e.currentTarget.value)}
+            onBlur={handleTitleSave}
+            onKeyDown={handleTitleKeyDown}
+            class="text-xl font-bold px-2 py-1 border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            autofocus
+          />
+        ) : (
+          <h2 
+            class="text-xl font-bold inline-block px-2 py-1 hover:bg-gray-100 rounded cursor-pointer"
+            onClick={() => {
+              setEditedTitle(props.layout.title || '')
+              setIsEditingTitle(true)
+            }}
+            title="Click to edit layout name"
+          >
+            {props.layout.title || 'Untitled Layout'}
+            <span class="ml-2 text-gray-400 text-sm">✏️</span>
+          </h2>
+        )}
+      </div>
       
       <div class="mb-4 flex gap-2">
         <button
@@ -273,26 +365,59 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
               }}
               onMouseDown={(e) => handleMouseDown(e, element.id)}
             >
-              <div class="p-2 h-full flex flex-col">
-                <div class="flex items-center justify-between mb-1">
-                  <div class="flex items-center gap-2">
-                    <span class="text-lg">{getElementTypeIcon(element.type)}</span>
-                    <span class="text-sm font-medium">{getElementDisplayName(element)}</span>
+              {element.type === 'tableView' ? (
+                <Show when={props.tables}>
+                  {() => {
+                    const table = props.tables!.find(t => t.id === element.data?.settings?.tableId)
+                    return table ? (
+                      <TableView
+                        table={table}
+                        settings={element.data.settings}
+                        onSettingsClick={() => openSettings(element)}
+                      />
+                    ) : (
+                      <div class="p-2 h-full flex items-center justify-center text-gray-500">
+                        Table not found
+                      </div>
+                    )
+                  }}
+                </Show>
+              ) : (
+                <div class="p-2 h-full flex flex-col">
+                  <div class="flex items-center justify-between mb-1">
+                    <div class="flex items-center gap-2">
+                      <span class="text-lg">{getElementTypeIcon(element.type)}</span>
+                      <span class="text-sm font-medium">{getElementDisplayName(element)}</span>
+                    </div>
+                    <div class="flex gap-1">
+                      <Show when={element.type === 'tableView'}>
+                        <button
+                          class="text-gray-600 hover:text-gray-800 px-1"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            openSettings(element)
+                          }}
+                          title="Settings"
+                        >
+                          ⚙️
+                        </button>
+                      </Show>
+                      <button
+                        class="text-red-500 hover:text-red-700 px-1"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          removeElement(element.id)
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
                   </div>
-                  <button
-                    class="text-red-500 hover:text-red-700 px-1"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      removeElement(element.id)
-                    }}
-                  >
-                    ×
-                  </button>
+                  <div class="flex-1 flex items-center justify-center text-xs text-gray-400">
+                    {element.gridSize.cols}×{element.gridSize.rows}
+                  </div>
                 </div>
-                <div class="flex-1 flex items-center justify-center text-xs text-gray-400">
-                  {element.gridSize.cols}×{element.gridSize.rows}
-                </div>
-              </div>
+              )}
               
               {/* Resize handle */}
               <div
@@ -318,6 +443,17 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
           />
         </Show>
       </div>
+      
+      <TableViewSettingsDialog
+        isOpen={settingsElement() !== null}
+        table={settingsTable()}
+        settings={settingsElement()?.data?.settings || {}}
+        onClose={() => {
+          setSettingsElement(null)
+          setSettingsTable(null)
+        }}
+        onSave={handleSettingsSave}
+      />
     </div>
   )
 }

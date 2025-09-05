@@ -391,7 +391,7 @@ const Project: Component = () => {
           </Show>
           
           <Show when={activeType() === 'layout' && getActiveLayout()}>
-            {(layout) => <LayoutBuilder layout={layout()} onUpdate={handleUpdateLayout} />}
+            {(layout) => <LayoutBuilder layout={layout()} onUpdate={handleUpdateLayout} tables={tables()} />}
           </Show>
           
           <Show when={!activeId()}>
