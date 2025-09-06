@@ -5,6 +5,7 @@ import TextArea from './common/TextArea'
 import Select from './common/Select'
 import Checkbox from './common/Checkbox'
 import Button from './common/Button'
+import CommonDialog from './common/CommonDialog'
 import TemplateSelectDialog from './TemplateSelectDialog'
 import { TableTemplate } from '../data/tableTemplates'
 
@@ -221,15 +222,32 @@ const TableEditDialog: Component<TableEditDialogProps> = (props) => {
     props.onClose()
   }
 
+  const footer = (
+    <div class="flex justify-end gap-3">
+      <Button
+        variant="ghost"
+        onClick={props.onClose}
+      >
+        Cancel
+      </Button>
+      <Button
+        variant="primary"
+        onClick={handleSave}
+      >
+        Save Changes
+      </Button>
+    </div>
+  )
+
   return (
-    <Show when={props.isOpen && props.table}>
-      <div class="fixed inset-0 bg-black/30 flex items-center justify-center" style="z-index: 99999;">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-        <div class="px-6 py-4 border-b">
-          <h2 class="text-xl font-bold">Edit Table Structure</h2>
-        </div>
-        
-        <div class="flex-1 overflow-auto p-6">
+    <>
+      <CommonDialog
+        isOpen={props.isOpen && !!props.table}
+        onClose={props.onClose}
+        title="Edit Table Structure"
+        maxWidth="max-w-4xl"
+        footer={footer}
+      >
           {/* Table Name and Comment */}
           <div class="mb-6 space-y-4">
             <div>
@@ -496,31 +514,14 @@ const TableEditDialog: Component<TableEditDialogProps> = (props) => {
               </For>
             </div>
           </div>
-        </div>
-        
-        <div class="px-6 py-4 border-t flex justify-end gap-3">
-          <Button
-            variant="ghost"
-            onClick={props.onClose}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSave}
-          >
-            Save Changes
-          </Button>
-        </div>
-      </div>
-    </div>
-    
-    <TemplateSelectDialog
-      isOpen={showTemplateDialog()}
-      onClose={() => setShowTemplateDialog(false)}
-      onSelect={applyTemplate}
-    />
-    </Show>
+      </CommonDialog>
+      
+      <TemplateSelectDialog
+        isOpen={showTemplateDialog()}
+        onClose={() => setShowTemplateDialog(false)}
+        onSelect={applyTemplate}
+      />
+    </>
   )
 }
 

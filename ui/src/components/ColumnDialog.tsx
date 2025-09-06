@@ -1,5 +1,6 @@
 import { Component, createSignal, For } from 'solid-js'
 import { Column, CellType } from '../models/types'
+import { CommonDialog, Button } from './common'
 
 interface ColumnDialogProps {
   isOpen: boolean
@@ -90,16 +91,32 @@ const ColumnDialog: Component<ColumnDialogProps> = (props) => {
     }
   }
 
-  if (!props.isOpen) return null
+  const footer = (
+    <div class="flex justify-end gap-2">
+      <Button
+        variant="ghost"
+        onClick={props.onClose}
+      >
+        Cancel
+      </Button>
+      <Button
+        variant="primary"
+        onClick={handleConfirm}
+      >
+        {props.editingColumn ? 'Update' : 'Add Column'}
+      </Button>
+    </div>
+  )
 
   return (
-    <div class="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
-      <div class="bg-white rounded-lg p-6 w-96 max-w-full">
-        <h2 class="text-xl font-bold mb-4">
-          {props.editingColumn ? 'Edit Column' : 'Add Column'}
-        </h2>
-        
-        <div class="space-y-4">
+    <CommonDialog
+      isOpen={props.isOpen}
+      onClose={props.onClose}
+      title={props.editingColumn ? 'Edit Column' : 'Add Column'}
+      maxWidth="max-w-md"
+      footer={footer}
+    >
+      <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium mb-1">Column Name</label>
             <input
@@ -153,24 +170,8 @@ const ColumnDialog: Component<ColumnDialogProps> = (props) => {
               <span class="text-sm">Allow NULL values</span>
             </label>
           </div>
-        </div>
-
-        <div class="flex justify-end gap-2 mt-6">
-          <button
-            class="px-4 py-2 text-gray-600 hover:text-gray-800"
-            onClick={props.onClose}
-          >
-            Cancel
-          </button>
-          <button
-            class="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            onClick={handleConfirm}
-          >
-            {props.editingColumn ? 'Update' : 'Add Column'}
-          </button>
-        </div>
       </div>
-    </div>
+    </CommonDialog>
   )
 }
 

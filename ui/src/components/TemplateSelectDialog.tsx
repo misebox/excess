@@ -1,5 +1,5 @@
 import { Component, Show, For } from 'solid-js'
-import Button from './common/Button'
+import { Button, CommonDialog } from './common'
 import { tableTemplates, TableTemplate } from '../data/tableTemplates'
 
 interface TemplateSelectDialogProps {
@@ -9,23 +9,24 @@ interface TemplateSelectDialogProps {
 }
 
 const TemplateSelectDialog: Component<TemplateSelectDialogProps> = (props) => {
+  const footer = (
+    <Button
+      variant="ghost"
+      onClick={props.onClose}
+    >
+      Cancel
+    </Button>
+  )
+
   return (
-    <Show when={props.isOpen}>
-      <div 
-        class="fixed inset-0 bg-black/30 flex items-center justify-center" 
-        style="z-index: 100000;"
-        onClick={props.onClose}
-      >
-        <div 
-          class="bg-white rounded-lg shadow-xl max-w-3xl w-full mx-4 max-h-[80vh] flex flex-col"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div class="px-6 py-4 border-b">
-            <h3 class="text-lg font-semibold">Select Table Template</h3>
-            <p class="text-sm text-gray-600 mt-1">Choose a template to apply its structure to your table</p>
-          </div>
-          
-          <div class="flex-1 overflow-auto px-6 py-4">
+    <CommonDialog
+      isOpen={props.isOpen}
+      onClose={props.onClose}
+      title="Select Table Template"
+      maxWidth="max-w-3xl"
+      footer={footer}
+    >
+      <p class="text-sm text-gray-600 mb-4">Choose a template to apply its structure to your table</p>
             <div class="grid gap-3">
               <For each={tableTemplates}>
                 {(template) => (
@@ -57,19 +58,7 @@ const TemplateSelectDialog: Component<TemplateSelectDialogProps> = (props) => {
                 )}
               </For>
             </div>
-          </div>
-          
-          <div class="px-6 py-4 border-t">
-            <Button
-              variant="ghost"
-              onClick={props.onClose}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </div>
-    </Show>
+    </CommonDialog>
   )
 }
 
