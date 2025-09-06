@@ -103,6 +103,31 @@ export interface TableViewSettings {
   filters?: FilterCondition[]
   sortBy?: SortCondition[]
   limit?: number
+  pageSize?: number  // Number of rows per page for pagination
+}
+
+export type ChartType = 'bar' | 'line' | 'pie' | 'area' | 'scatter'
+
+export interface ChartSettings {
+  sourceType: 'table' | 'view'
+  sourceId: string
+  chartType: ChartType
+  xAxis?: string  // column name
+  yAxis?: string  // column name
+  groupBy?: string  // column name for grouping
+  aggregation?: 'sum' | 'average' | 'count' | 'min' | 'max'
+  title?: string
+  showLegend?: boolean
+  showGrid?: boolean
+  colors?: string[]
+}
+
+export interface TextElementSettings {
+  content: string
+  fontSize?: number
+  fontWeight?: string
+  textAlign?: 'left' | 'center' | 'right'
+  color?: string
 }
 
 export type TabType = 'table' | 'view' | 'function' | 'layout'

@@ -127,7 +127,12 @@ const Project: Component = () => {
   }
   
   const handleUpdateLayout = (updatedLayout: Layout) => {
-    setLayouts(prev => prev.map(l => l.id === updatedLayout.id ? updatedLayout : l))
+    console.log('handleUpdateLayout called with:', updatedLayout)
+    setLayouts(prev => {
+      const updated = prev.map(l => l.id === updatedLayout.id ? updatedLayout : l)
+      console.log('Updated layouts:', updated)
+      return updated
+    })
   }
   
   const handleDelete = (id: string, type: 'table' | 'view' | 'function' | 'layout') => {
@@ -203,12 +208,12 @@ const Project: Component = () => {
               row[col.name] = Number(value)
               // Update column type if all values so far are numbers
               if (columns[i].type === 'string') {
-                columns[i].type = value.includes('.') ? 'number' : 'number'
+                columns[i].type = 'number' as const
               }
             } else if (value === 'true' || value === 'false') {
               row[col.name] = value === 'true'
               if (columns[i].type === 'string') {
-                columns[i].type = 'boolean'
+                columns[i].type = 'boolean' as const
               }
             } else {
               row[col.name] = value
@@ -226,8 +231,8 @@ const Project: Component = () => {
       
       const newTable: Table = {
         id: `table_${Date.now()}`,
-        name: tableName,
-        description: `Imported from ${file.name}`,
+        title: tableName,
+        comment: `Imported from ${file.name}`,
         columns,
         rows,
         primaryKey: [],

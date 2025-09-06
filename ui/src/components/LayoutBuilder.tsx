@@ -1,15 +1,19 @@
-import { Component, For, createSignal, onMount, onCleanup, Show, createEffect } from 'solid-js'
-import { Layout, LayoutElement, Table, TableViewSettings } from '../models/types'
+import { Component, For, Index, createSignal, onMount, onCleanup, Show, createEffect, batch } from 'solid-js'
+import { Layout, LayoutElement, Table, TableViewSettings, View, ChartSettings, TextElementSettings } from '../models/types'
 import TableView from './TableView'
 import TableViewSettingsDialog from './TableViewSettings'
+import TextElement from './TextElement'
+import ChartElement from './ChartElement'
+import ChartSettingsDialog from './ChartSettings'
 
 interface LayoutBuilderProps {
   layout: Layout
   onUpdate: (layout: Layout) => void
   tables?: Table[]  // Available tables for TableView
+  views?: View[]    // Available views for charts
 }
 
-const GRID_SIZE = 30 // pixels per grid cell
+const GRID_SIZE = 23 // pixels per grid cell (reduced to 75%)
 const GRID_COLS = 40
 const GRID_ROWS = 30
 
@@ -22,18 +26,48 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   const [dropPreview, setDropPreview] = createSignal<{x: number, y: number} | null>(null)
   const [isEditingTitle, setIsEditingTitle] = createSignal(false)
   const [editedTitle, setEditedTitle] = createSignal(props.layout.title || '')
+  const [showTableViewSettings, setShowTableViewSettings] = createSignal(false)
   const [settingsElement, setSettingsElement] = createSignal<LayoutElement | null>(null)
   const [settingsTable, setSettingsTable] = createSignal<Table | null>(null)
+  const [chartSettingsElement, setChartSettingsElement] = createSignal<LayoutElement | null>(null)
+  const [contextMenu, setContextMenu] = createSignal<{x: number, y: number, elementId: string} | null>(null)
   
   let containerRef: HTMLDivElement | undefined
 
+  // Debug effect to monitor settings dialog state
+  createEffect(() => {
+    const isOpen = showTableViewSettings()
+    const element = settingsElement()
+    const table = settingsTable()
+    console.log('TableViewSettings dialog state:', {
+      isOpen,
+      element,
+      table,
+      tablesProp: props.tables
+    })
+  })
+
   const addElement = (type: string, data: any = null, position?: { col: number, row: number }) => {
+    // Set default data based on element type
+    let elementData = data
+    if (type === 'text' && !data) {
+      elementData = { content: '', fontSize: 14, textAlign: 'left' } as TextElementSettings
+    } else if (type === 'chart' && !data) {
+      elementData = { 
+        settings: {
+          sourceType: 'table',
+          sourceId: '',
+          chartType: 'bar'
+        } as ChartSettings
+      }
+    }
+    
     const newElement: LayoutElement = {
       id: `elem_${Date.now()}`,
       type: type as any,
       gridPosition: position || { col: Math.floor(Math.random() * 10), row: Math.floor(Math.random() * 10) },
       gridSize: { cols: 6, rows: 4 },
-      data: data
+      data: elementData
     }
     props.onUpdate({
       ...props.layout,
@@ -42,6 +76,17 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   }
 
   const handleMouseDown = (e: MouseEvent, elementId: string, isResize: boolean = false) => {
+    // Only handle mouse down if it's not on an interactive element
+    const target = e.target as HTMLElement
+    if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA') {
+      return
+    }
+    
+    // Check if target or its parents have click handlers (like settings button)
+    if (target.closest('button')) {
+      return
+    }
+    
     e.preventDefault()
     e.stopPropagation()
     
@@ -190,6 +235,18 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   onMount(() => {
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleMouseUp)
+    
+    // Close context menu on click outside
+    const handleClickOutside = (e: MouseEvent) => {
+      if (contextMenu()) {
+        setContextMenu(null)
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    
+    return () => {
+      document.removeEventListener('click', handleClickOutside)
+    }
   })
 
   onCleanup(() => {
@@ -227,17 +284,44 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   }
   
   const openSettings = (element: LayoutElement) => {
+    console.log('openSettings called:', element)
     if (element.type === 'tableView') {
-      const table = props.tables?.find(t => t.id === element.data?.settings?.tableId)
-      if (table) {
-        setSettingsTable(table)
-        setSettingsElement(element)
-      }
+      const tableId = element.data?.settings?.tableId
+      console.log('TableView settings - tableId:', tableId)
+      const table = props.tables?.find(t => t.id === tableId)
+      console.log('Found table:', table)
+      // Open settings dialog even if table not found
+      setSettingsTable(table || null)
+      setSettingsElement(element)
+      setShowTableViewSettings(true)
+      console.log('Settings dialog opened, showTableViewSettings:', showTableViewSettings())
+    } else if (element.type === 'chart') {
+      setChartSettingsElement(element)
     }
   }
   
   const handleSettingsSave = (settings: TableViewSettings) => {
+    console.log('Saving TableView settings:', settings)
     const element = settingsElement()
+    if (element) {
+      const updatedElement = { ...element, data: { ...element.data, settings } }
+      console.log('Updated element:', updatedElement)
+      props.onUpdate({
+        ...props.layout,
+        elements: props.layout.elements.map(el =>
+          el.id === element.id
+            ? updatedElement
+            : el
+        )
+      })
+    }
+    setShowTableViewSettings(false)
+    setSettingsElement(null)
+    setSettingsTable(null)
+  }
+  
+  const handleChartSettingsSave = (settings: ChartSettings) => {
+    const element = chartSettingsElement()
     if (element) {
       props.onUpdate({
         ...props.layout,
@@ -248,8 +332,18 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
         )
       })
     }
-    setSettingsElement(null)
-    setSettingsTable(null)
+    setChartSettingsElement(null)
+  }
+  
+  const handleTextUpdate = (elementId: string, content: string) => {
+    props.onUpdate({
+      ...props.layout,
+      elements: props.layout.elements.map(el =>
+        el.id === elementId
+          ? { ...el, data: { ...el.data, content } }
+          : el
+      )
+    })
   }
 
   const handleTitleSave = () => {
@@ -364,21 +458,51 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
                 cursor: dragging() === element.id ? 'grabbing' : 'grab'
               }}
               onMouseDown={(e) => handleMouseDown(e, element.id)}
+              onContextMenu={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                setContextMenu({ x: e.clientX, y: e.clientY, elementId: element.id })
+              }}
             >
               {element.type === 'tableView' ? (
                 <Show when={props.tables}>
                   {() => {
                     const table = props.tables!.find(t => t.id === element.data?.settings?.tableId)
+                    console.log('TableView element id:', element.id)
+                    console.log('TableView element data:', element.data)
+                    console.log('TableView settings being passed:', element.data?.settings)
                     return table ? (
                       <TableView
                         table={table}
-                        settings={element.data.settings}
+                        settings={element.data?.settings || {}}
                         onSettingsClick={() => openSettings(element)}
                       />
                     ) : (
                       <div class="p-2 h-full flex items-center justify-center text-gray-500">
                         Table not found
                       </div>
+                    )
+                  }}
+                </Show>
+              ) : element.type === 'text' ? (
+                <TextElement
+                  content={element.data?.content || ''}
+                  onUpdate={(content) => handleTextUpdate(element.id, content)}
+                  fontSize={element.data?.fontSize}
+                  fontWeight={element.data?.fontWeight}
+                  textAlign={element.data?.textAlign}
+                  color={element.data?.color}
+                />
+              ) : element.type === 'chart' ? (
+                <Show when={props.tables}>
+                  {() => {
+                    const table = props.tables!.find(t => t.id === element.data?.settings?.sourceId)
+                    return (
+                      <ChartElement
+                        table={table || null}
+                        settings={element.data?.settings || {}}
+                        onSettingsClick={() => openSettings(element)}
+                      />
                     )
                   }}
                 </Show>
@@ -390,7 +514,7 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
                       <span class="text-sm font-medium">{getElementDisplayName(element)}</span>
                     </div>
                     <div class="flex gap-1">
-                      <Show when={element.type === 'tableView'}>
+                      <Show when={element.type === 'tableView' || element.type === 'chart'}>
                         <button
                           class="text-gray-600 hover:text-gray-800 px-1"
                           onClick={(e) => {
@@ -442,17 +566,96 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
             }}
           />
         </Show>
+        
+        {/* Context Menu */}
+        <Show when={contextMenu()}>
+          <div
+            class="fixed bg-white border shadow-lg rounded-md py-1"
+            style={{
+              left: `${contextMenu()!.x}px`,
+              top: `${contextMenu()!.y}px`,
+              "z-index": 100000
+            }}
+            onMouseLeave={() => setContextMenu(null)}
+          >
+            <Show when={() => {
+              const element = props.layout.elements.find(el => el.id === contextMenu()!.elementId)
+              return element && (element.type === 'tableView' || element.type === 'chart')
+            }}>
+              <button
+                class="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm flex items-center gap-2"
+                onClick={() => {
+                  const element = props.layout.elements.find(el => el.id === contextMenu()!.elementId)
+                  if (element) {
+                    openSettings(element)
+                  }
+                  setContextMenu(null)
+                }}
+              >
+                ⚙️ Settings
+              </button>
+            </Show>
+            <button
+              class="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm flex items-center gap-2"
+              onClick={() => {
+                const elementId = contextMenu()!.elementId
+                // Clone element
+                const element = props.layout.elements.find(el => el.id === elementId)
+                if (element) {
+                  const newElement: LayoutElement = {
+                    ...element,
+                    id: `elem_${Date.now()}`,
+                    gridPosition: {
+                      col: Math.min(element.gridPosition.col + 1, GRID_COLS - element.gridSize.cols),
+                      row: Math.min(element.gridPosition.row + 1, GRID_ROWS - element.gridSize.rows)
+                    }
+                  }
+                  props.onUpdate({
+                    ...props.layout,
+                    elements: [...props.layout.elements, newElement]
+                  })
+                }
+                setContextMenu(null)
+              }}
+            >
+              📋 Duplicate
+            </button>
+            <div class="border-t my-1"></div>
+            <button
+              class="w-full px-4 py-2 text-left hover:bg-red-50 text-red-600 text-sm flex items-center gap-2"
+              onClick={() => {
+                removeElement(contextMenu()!.elementId)
+                setContextMenu(null)
+              }}
+            >
+              🗑️ Delete
+            </button>
+          </div>
+        </Show>
       </div>
       
-      <TableViewSettingsDialog
-        isOpen={settingsElement() !== null}
-        table={settingsTable()}
-        settings={settingsElement()?.data?.settings || {}}
-        onClose={() => {
-          setSettingsElement(null)
-          setSettingsTable(null)
-        }}
-        onSave={handleSettingsSave}
+      <Show when={showTableViewSettings()}>
+        <TableViewSettingsDialog
+          isOpen={true}
+          table={settingsTable()}
+          tables={props.tables}
+          settings={settingsElement()?.data?.settings || { tableId: '' }}
+          onClose={() => {
+            setShowTableViewSettings(false)
+            setSettingsElement(null)
+            setSettingsTable(null)
+          }}
+          onSave={handleSettingsSave}
+        />
+      </Show>
+      
+      <ChartSettingsDialog
+        isOpen={chartSettingsElement() !== null}
+        tables={props.tables || []}
+        views={props.views || []}
+        settings={chartSettingsElement()?.data?.settings || null}
+        onClose={() => setChartSettingsElement(null)}
+        onSave={handleChartSettingsSave}
       />
     </div>
   )

@@ -1,4 +1,4 @@
-import { Component, createSignal, For, Show, createEffect } from 'solid-js'
+import { Component, createSignal, For, Show, createEffect, Index, untrack } from 'solid-js'
 import { Table, TableViewSettings, FilterCondition, SortCondition } from '@/models/types'
 
 interface TableViewSettingsDialogProps {
@@ -10,22 +10,70 @@ interface TableViewSettingsDialogProps {
 }
 
 const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props) => {
-  const [selectedColumns, setSelectedColumns] = createSignal<string[]>(props.settings.selectedColumns || [])
-  const [filters, setFilters] = createSignal<FilterCondition[]>(props.settings.filters || [])
-  const [sortBy, setSortBy] = createSignal<SortCondition[]>(props.settings.sortBy || [])
-  const [limit, setLimit] = createSignal<number | undefined>(props.settings.limit)
-  const [selectAll, setSelectAll] = createSignal(!props.settings.selectedColumns || props.settings.selectedColumns.length === 0)
+  console.log('TableViewSettingsDialog render called')
+  console.log('  isOpen:', props.isOpen)
+  console.log('  table:', props.table)
+  console.log('  tables:', props.tables)
+  console.log('  settings:', props.settings)
+  
+  // Initialize state only once
+  const [tableId, setTableId] = createSignal(props.settings?.tableId || '')
+  const [selectedColumns, setSelectedColumns] = createSignal<string[]>(props.settings?.selectedColumns || [])
+  const [filters, setFilters] = createSignal<FilterCondition[]>(props.settings?.filters || [])
+  const [sortBy, setSortBy] = createSignal<SortCondition[]>(props.settings?.sortBy || [])
+  const [limit, setLimit] = createSignal<number | undefined>(props.settings?.limit)
+  const [pageSize, setPageSize] = createSignal<number>(props.settings?.pageSize || 5)
+  const [selectAll, setSelectAll] = createSignal(!props.settings?.selectedColumns || props.settings?.selectedColumns?.length === 0)
 
-  // Update state when props change
+  // Update state when dialog opens with new settings
   createEffect(() => {
-    if (props.isOpen && props.table) {
-      setSelectedColumns(props.settings.selectedColumns || props.table.columns.map(c => c.name))
-      setFilters(props.settings.filters || [])
-      setSortBy(props.settings.sortBy || [])
-      setLimit(props.settings.limit)
-      setSelectAll(!props.settings.selectedColumns || props.settings.selectedColumns.length === 0)
+    console.log('TableViewSettings createEffect - isOpen:', props.isOpen, 'settings:', props.settings)
+    if (props.isOpen && props.settings) {
+      untrack(() => {
+        // Only update if props have actually changed
+        if (props.settings.tableId !== undefined) {
+          setTableId(props.settings.tableId)
+        }
+        
+        // Update filters from props
+        if (props.settings.filters !== undefined) {
+          setFilters(props.settings.filters)
+        }
+        
+        // Update sort from props
+        if (props.settings.sortBy !== undefined) {
+          setSortBy(props.settings.sortBy)
+        }
+        
+        // Update columns
+        if (props.settings.selectedColumns !== undefined) {
+          setSelectedColumns(props.settings.selectedColumns)
+          setSelectAll(false)
+        } else if (props.table && selectedColumns().length === 0) {
+          setSelectedColumns(props.table.columns.map(c => c.name))
+          setSelectAll(true)
+        }
+        
+        // Update limit
+        if (props.settings.limit !== undefined) {
+          setLimit(props.settings.limit)
+        }
+        
+        // Update pageSize
+        if (props.settings.pageSize !== undefined) {
+          setPageSize(props.settings.pageSize)
+        }
+      })
     }
   })
+  
+  // Get current table based on selection
+  const getCurrentTable = () => {
+    if (tableId() && props.tables) {
+      return props.tables.find(t => t.id === tableId())
+    }
+    return props.table
+  }
 
   const operators = [
     { value: 'equals', label: '=' },
@@ -53,17 +101,19 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
   }
 
   const handleSelectAllToggle = () => {
+    const table = getCurrentTable()
     if (selectAll()) {
       setSelectedColumns([])
       setSelectAll(false)
     } else {
-      setSelectedColumns(props.table?.columns.map(c => c.name) || [])
+      setSelectedColumns(table?.columns.map(c => c.name) || [])
       setSelectAll(true)
     }
   }
 
   const addFilter = () => {
-    const firstColumn = props.table?.columns[0]?.name || ''
+    const table = getCurrentTable()
+    const firstColumn = table?.columns[0]?.name || ''
     setFilters(prev => [...prev, {
       column: firstColumn,
       operator: 'equals',
@@ -82,7 +132,8 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
   }
 
   const addSort = () => {
-    const firstColumn = props.table?.columns[0]?.name || ''
+    const table = getCurrentTable()
+    const firstColumn = table?.columns[0]?.name || ''
     setSortBy(prev => [...prev, {
       column: firstColumn,
       direction: 'asc'
@@ -101,27 +152,61 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
 
   const handleSave = () => {
     const settings: TableViewSettings = {
-      tableId: props.settings.tableId,
+      tableId: tableId() || props.settings?.tableId,
       selectedColumns: selectAll() ? undefined : selectedColumns(),
       filters: filters().length > 0 ? filters() : undefined,
       sortBy: sortBy().length > 0 ? sortBy() : undefined,
-      limit: limit()
+      limit: limit(),
+      pageSize: pageSize()
     }
+    console.log('TableViewSettings handleSave - saving settings:', settings)
+    console.log('  filters:', filters())
     props.onSave(settings)
     props.onClose()
   }
 
-  if (!props.isOpen || !props.table) return null
-
+  console.log('TableViewSettingsDialog rendering dialog')
   return (
-    <div class="fixed inset-0 bg-black/30 flex items-center justify-center" style="z-index: 99999;">
+    <div 
+      class="fixed inset-0 bg-black/30 flex items-center justify-center" 
+      style="z-index: 99999;"
+      onKeyDown={(e) => e.stopPropagation()}
+    >
       <div class="bg-white rounded-lg shadow-xl w-full max-w-3xl max-h-[80vh] overflow-hidden flex flex-col">
         <div class="px-6 py-4 border-b">
           <h2 class="text-xl font-bold">Table View Settings</h2>
         </div>
         
         <div class="flex-1 overflow-auto p-6 space-y-6">
+          {/* Table Selection if multiple tables available */}
+          <Show when={props.tables && props.tables.length > 0}>
+            <div>
+              <h3 class="text-lg font-semibold mb-3">Select Table</h3>
+              <select
+                class="w-full px-3 py-2 border rounded"
+                value={tableId()}
+                onChange={(e) => {
+                  setTableId(e.currentTarget.value)
+                  // Reset columns when table changes
+                  const newTable = props.tables?.find(t => t.id === e.currentTarget.value)
+                  if (newTable) {
+                    setSelectedColumns(newTable.columns.map(c => c.name))
+                    setSelectAll(true)
+                  }
+                }}
+              >
+                <option value="">Select a table...</option>
+                <For each={props.tables}>
+                  {(table) => (
+                    <option value={table.id}>{table.title || table.id}</option>
+                  )}
+                </For>
+              </select>
+            </div>
+          </Show>
+          
           {/* Column Selection */}
+          <Show when={getCurrentTable()}>
           <div>
             <h3 class="text-lg font-semibold mb-3">Visible Columns</h3>
             <div class="space-y-2">
@@ -135,7 +220,7 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
                 <span class="font-medium">Select All</span>
               </label>
               <div class="ml-4 space-y-1">
-                <For each={props.table.columns}>
+                <For each={getCurrentTable()?.columns || []}>
                   {(column) => (
                     <label class="flex items-center gap-2 p-1 hover:bg-gray-50 rounded">
                       <input
@@ -153,8 +238,10 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
               </div>
             </div>
           </div>
+          </Show>
 
           {/* Filters */}
+          <Show when={getCurrentTable()}>
           <div>
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-lg font-semibold">Filters</h3>
@@ -166,15 +253,15 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
               </button>
             </div>
             <div class="space-y-2">
-              <For each={filters()}>
+              <Index each={filters()}>
                 {(filter, index) => (
                   <div class="flex items-center gap-2 p-2 bg-gray-50 rounded">
                     <select
                       class="px-2 py-1 border rounded"
-                      value={filter.column}
-                      onChange={(e) => updateFilter(index(), 'column', e.currentTarget.value)}
+                      value={filter().column}
+                      onChange={(e) => updateFilter(index, 'column', e.currentTarget.value)}
                     >
-                      <For each={props.table?.columns}>
+                      <For each={getCurrentTable()?.columns || []}>
                         {(column) => (
                           <option value={column.name}>{column.name}</option>
                         )}
@@ -183,8 +270,8 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
                     
                     <select
                       class="px-2 py-1 border rounded"
-                      value={filter.operator}
-                      onChange={(e) => updateFilter(index(), 'operator', e.currentTarget.value)}
+                      value={filter().operator}
+                      onChange={(e) => updateFilter(index, 'operator', e.currentTarget.value)}
                     >
                       <For each={operators}>
                         {(op) => (
@@ -193,29 +280,32 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
                       </For>
                     </select>
                     
-                    <Show when={filter.operator !== 'is_null' && filter.operator !== 'is_not_null'}>
+                    <Show when={filter().operator !== 'is_null' && filter().operator !== 'is_not_null'}>
                       <input
                         type="text"
                         class="flex-1 px-2 py-1 border rounded"
-                        value={filter.value || ''}
-                        onInput={(e) => updateFilter(index(), 'value', e.currentTarget.value)}
+                        value={filter().value || ''}
+                        onInput={(e) => updateFilter(index, 'value', e.currentTarget.value)}
+                        onKeyDown={(e) => e.stopPropagation()}
                         placeholder="Value"
                       />
                     </Show>
                     
                     <button
                       class="px-2 py-1 text-red-500 hover:text-red-700"
-                      onClick={() => removeFilter(index())}
+                      onClick={() => removeFilter(index)}
                     >
                       ✕
                     </button>
                   </div>
                 )}
-              </For>
+              </Index>
             </div>
           </div>
+          </Show>
 
           {/* Sorting */}
+          <Show when={getCurrentTable()}>
           <div>
             <div class="flex items-center justify-between mb-3">
               <h3 class="text-lg font-semibold">Sort By</h3>
@@ -227,15 +317,15 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
               </button>
             </div>
             <div class="space-y-2">
-              <For each={sortBy()}>
+              <Index each={sortBy()}>
                 {(sort, index) => (
                   <div class="flex items-center gap-2 p-2 bg-gray-50 rounded">
                     <select
                       class="px-2 py-1 border rounded"
-                      value={sort.column}
-                      onChange={(e) => updateSort(index(), 'column', e.currentTarget.value)}
+                      value={sort().column}
+                      onChange={(e) => updateSort(index, 'column', e.currentTarget.value)}
                     >
-                      <For each={props.table?.columns}>
+                      <For each={getCurrentTable()?.columns || []}>
                         {(column) => (
                           <option value={column.name}>{column.name}</option>
                         )}
@@ -244,8 +334,8 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
                     
                     <select
                       class="px-2 py-1 border rounded"
-                      value={sort.direction}
-                      onChange={(e) => updateSort(index(), 'direction', e.currentTarget.value as 'asc' | 'desc')}
+                      value={sort().direction}
+                      onChange={(e) => updateSort(index, 'direction', e.currentTarget.value as 'asc' | 'desc')}
                     >
                       <option value="asc">Ascending ↑</option>
                       <option value="desc">Descending ↓</option>
@@ -253,15 +343,16 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
                     
                     <button
                       class="px-2 py-1 text-red-500 hover:text-red-700"
-                      onClick={() => removeSort(index())}
+                      onClick={() => removeSort(index)}
                     >
                       ✕
                     </button>
                   </div>
                 )}
-              </For>
+              </Index>
             </div>
           </div>
+          </Show>
 
           {/* Limit */}
           <div>
@@ -274,9 +365,26 @@ const TableViewSettingsDialog: Component<TableViewSettingsDialogProps> = (props)
                 const val = e.currentTarget.value
                 setLimit(val ? parseInt(val) : undefined)
               }}
+              onKeyDown={(e) => e.stopPropagation()}
               placeholder="No limit"
               min="1"
             />
+          </div>
+
+          {/* Page Size */}
+          <div>
+            <h3 class="text-lg font-semibold mb-3">Page Size</h3>
+            <select
+              class="px-3 py-2 border rounded w-32"
+              value={pageSize()}
+              onChange={(e) => setPageSize(parseInt(e.currentTarget.value))}
+            >
+              <option value="5">5 rows</option>
+              <option value="10">10 rows</option>
+              <option value="20">20 rows</option>
+              <option value="50">50 rows</option>
+              <option value="100">100 rows</option>
+            </select>
           </div>
         </div>
         
