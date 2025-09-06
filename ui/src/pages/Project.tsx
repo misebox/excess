@@ -8,6 +8,7 @@ import ViewEditDialog from '../components/ViewEditDialog'
 import FunctionEditor from '../components/FunctionEditor'
 import LayoutBuilder from '../components/LayoutBuilder'
 import { Table, View, AppFunction, Layout, Column } from '@/models/types'
+import { ResizablePanel, PageHeader, Button } from '../components/common'
 
 interface ProjectData {
   id: string
@@ -39,9 +40,6 @@ const Project: Component = () => {
   const [showCreateViewDialog, setShowCreateViewDialog] = createSignal(false)
   const [editingView, setEditingView] = createSignal<View | null>(null)
   
-  // State for sidebar width
-  const [sidebarWidth, setSidebarWidth] = createSignal(256) // 16rem = 256px
-  const [isResizing, setIsResizing] = createSignal(false)
   
   // Load project data on mount and handle URL parameters
   onMount(() => {
@@ -305,26 +303,6 @@ const Project: Component = () => {
     navigate(`/projects/${params.projectId}/views/${id}`)
   }
   
-  // Handle sidebar resize
-  const handleMouseDown = (e: MouseEvent) => {
-    e.preventDefault()
-    setIsResizing(true)
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing()) return
-      const newWidth = Math.max(200, Math.min(480, e.clientX))
-      setSidebarWidth(newWidth)
-    }
-    
-    const handleMouseUp = () => {
-      setIsResizing(false)
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-    
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }
   
   // Add a new item
   const handleAddNew = (type: 'table' | 'view' | 'function' | 'layout') => {
@@ -370,30 +348,24 @@ const Project: Component = () => {
   
   return (
     <div class="h-screen flex flex-col">
-      <header class="bg-white shadow-sm border-b flex items-center justify-between px-4 py-2">
-        <div class="flex items-center gap-4">
-          <A href="/" class="text-blue-600 hover:text-blue-700">
-            ← Projects
-          </A>
-          <h1 class="text-xl font-semibold">{projectName() || 'Loading...'}</h1>
-        </div>
-        
-        <div class="flex gap-2">
-          <button
-            class="px-3 py-1.5 bg-gray-600 text-white rounded hover:bg-gray-700 text-sm"
+      <PageHeader
+        title={projectName() || 'Loading...'}
+        backLink={{
+          href: '/',
+          label: '← Projects'
+        }}
+        actions={
+          <Button
+            variant="secondary"
             onClick={handleImportCSV}
-            title="Import CSV file as new table"
           >
             📁 Import CSV
-          </button>
-        </div>
-      </header>
+          </Button>
+        }
+      />
       
       <div class="flex-1 flex overflow-hidden">
-        <div 
-          class="bg-gray-50 border-r h-full overflow-y-auto relative"
-          style={{ width: `${sidebarWidth()}px` }}
-        >
+        <ResizablePanel class="bg-gray-50 border-r h-full">
           <Sidebar
             tables={tables()}
             views={views()}
@@ -408,16 +380,7 @@ const Project: Component = () => {
             onAddNew={handleAddNew}
             onDelete={handleDelete}
           />
-        </div>
-        
-        {/* Resize handle */}
-        <div
-          class={`w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize transition-colors ${
-            isResizing() ? 'bg-blue-500' : ''
-          }`}
-          onMouseDown={handleMouseDown}
-          style={{ "user-select": "none" }}
-        />
+        </ResizablePanel>
         
         <main class="flex-1 overflow-auto bg-white">
           <Show when={getActiveTable()} keyed>

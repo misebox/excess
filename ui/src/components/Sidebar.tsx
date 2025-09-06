@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal } from 'solid-js'
 import { Table, View, AppFunction, Layout } from '../models/types'
 import TableEditDialog from './TableEditDialog'
 import ConfirmDialog from './common/ConfirmDialog'
+import Button from './common/Button'
 
 interface SidebarProps {
   tables: Table[]
@@ -86,28 +87,30 @@ const Sidebar: Component<SidebarProps> = (props) => {
           {item.title || item.name}
         </span>
         {type === 'table' && (
-          <button
-            class="px-2 py-0.5 text-xs bg-white hover:bg-blue-50 border border-gray-300 hover:border-blue-400 text-gray-600 hover:text-blue-600 rounded transition-all duration-150 active:scale-95 cursor-pointer flex-shrink-0"
-            onClick={(e) => {
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e: MouseEvent) => {
               e.stopPropagation()
               setEditingTable(item as Table)
             }}
-            title="Edit table structure"
+            class="flex-shrink-0"
           >
             Edit
-          </button>
+          </Button>
         )}
         {type === 'view' && (
-          <button
-            class="px-2 py-0.5 text-xs bg-white hover:bg-green-50 border border-gray-300 hover:border-green-400 text-gray-600 hover:text-green-600 rounded transition-all duration-150 active:scale-95 cursor-pointer flex-shrink-0"
-            onClick={(e) => {
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e: MouseEvent) => {
               e.stopPropagation()
               props.onEditView?.(item as View)
             }}
-            title="Edit view query"
+            class="flex-shrink-0"
           >
             Edit
-          </button>
+          </Button>
         )}
       </div>
     )
@@ -125,13 +128,14 @@ const Sidebar: Component<SidebarProps> = (props) => {
       <div class="mb-6">
         <div class="flex items-center justify-between mb-2">
           <h3 class="text-xs font-semibold text-gray-500 uppercase">{title}</h3>
-          <button
-            class="px-1.5 py-0.5 text-xs bg-gray-200 hover:bg-gray-300 rounded transition-colors"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => props.onAddNew?.(type)}
-            title={`Add new ${type}`}
+            class="px-1.5 py-0.5"
           >
             +
-          </button>
+          </Button>
         </div>
         <Show when={items.length === 0}>
           <div class="text-sm text-gray-400 italic">{config.emptyMessage}</div>

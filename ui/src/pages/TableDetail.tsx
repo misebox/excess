@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar'
 import TableCreateDialog from '@/components/TableCreateDialog'
 import ViewCreationDialog from '@/components/ViewCreationDialog'
 import { Table, View, AppFunction, Layout } from '@/models/types'
+import { ResizablePanel, PageHeader } from '@/components/common'
 
 const TableDetail: Component = () => {
   const params = useParams()
@@ -18,8 +19,6 @@ const TableDetail: Component = () => {
   const [projectName, setProjectName] = createSignal<string>('')
   const [loading, setLoading] = createSignal(true)
   const [error, setError] = createSignal<string | null>(null)
-  const [sidebarWidth, setSidebarWidth] = createSignal(256)
-  const [isResizing, setIsResizing] = createSignal(false)
   const [showCreateTableDialog, setShowCreateTableDialog] = createSignal(false)
   const [showCreateViewDialog, setShowCreateViewDialog] = createSignal(false)
 
@@ -107,26 +106,6 @@ const TableDetail: Component = () => {
     }
   }
 
-  // Handle sidebar resize
-  const handleMouseDown = (e: MouseEvent) => {
-    e.preventDefault()
-    setIsResizing(true)
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing()) return
-      const newWidth = Math.max(200, Math.min(480, e.clientX))
-      setSidebarWidth(newWidth)
-    }
-    
-    const handleMouseUp = () => {
-      setIsResizing(false)
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-    
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }
 
   const handleSelect = (id: string, type: 'table' | 'view' | 'function' | 'layout') => {
     if (type === 'table') {
@@ -202,20 +181,16 @@ const TableDetail: Component = () => {
 
   return (
     <div class="h-screen flex flex-col">
-      <header class="bg-white shadow-sm border-b flex items-center justify-between px-4 py-2">
-        <div class="flex items-center gap-4">
-          <A href="/" class="text-blue-600 hover:text-blue-700">
-            ← Projects
-          </A>
-          <h1 class="text-xl font-semibold">{projectName() || 'Loading...'}</h1>
-        </div>
-      </header>
+      <PageHeader
+        title={projectName() || 'Loading...'}
+        backLink={{
+          href: '/',
+          label: '← Projects'
+        }}
+      />
       
       <div class="flex-1 flex overflow-hidden">
-        <div 
-          class="bg-gray-50 border-r h-full overflow-y-auto relative"
-          style={{ width: `${sidebarWidth()}px` }}
-        >
+        <ResizablePanel class="bg-gray-50 border-r h-full">
           <Sidebar
             tables={tables()}
             views={views()}
@@ -229,16 +204,7 @@ const TableDetail: Component = () => {
             onAddNew={handleAddNew}
             onDelete={handleDelete}
           />
-        </div>
-        
-        {/* Resize handle */}
-        <div
-          class={`w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize transition-colors ${
-            isResizing() ? 'bg-blue-500' : ''
-          }`}
-          onMouseDown={handleMouseDown}
-          style={{ "user-select": "none" }}
-        />
+        </ResizablePanel>
         
         <main class="flex-1 overflow-auto bg-white">
           <Show when={loading()}>

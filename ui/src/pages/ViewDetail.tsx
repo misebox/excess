@@ -6,6 +6,7 @@ import Sidebar from '../components/Sidebar'
 import ViewEditDialog from '../components/ViewEditDialog'
 import TableCreateDialog from '../components/TableCreateDialog'
 import ViewCreationDialog from '../components/ViewCreationDialog'
+import { ResizablePanel, PageHeader, Button } from '../components/common'
 
 const ViewDetail: Component = () => {
   const params = useParams()
@@ -28,8 +29,6 @@ const ViewDetail: Component = () => {
   const [autoRefresh, setAutoRefresh] = createSignal(false)
   const [refreshInterval, setRefreshInterval] = createSignal(5000)
   const [showSidebar, setShowSidebar] = createSignal(true)
-  const [sidebarWidth, setSidebarWidth] = createSignal(256)
-  const [isResizing, setIsResizing] = createSignal(false)
   const [editingView, setEditingView] = createSignal<View | null>(null)
   const [showCreateTableDialog, setShowCreateTableDialog] = createSignal(false)
   const [showCreateViewDialog, setShowCreateViewDialog] = createSignal(false)
@@ -191,25 +190,6 @@ const ViewDetail: Component = () => {
     return ''
   }
 
-  const handleMouseDown = (e: MouseEvent) => {
-    e.preventDefault()
-    setIsResizing(true)
-    
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!isResizing()) return
-      const newWidth = Math.max(200, Math.min(480, e.clientX))
-      setSidebarWidth(newWidth)
-    }
-    
-    const handleMouseUp = () => {
-      setIsResizing(false)
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-    }
-    
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  }
 
   const handleSelect = (id: string, type: 'table' | 'view' | 'function' | 'layout') => {
     if (type === 'table') {
@@ -332,32 +312,29 @@ const ViewDetail: Component = () => {
 
   return (
     <div class="h-screen flex flex-col">
-      <header class="bg-white shadow-sm border-b flex items-center justify-between px-4 py-2">
-        <div class="flex items-center gap-4">
-          <A href={`/projects/${params.projectId}`} class="text-blue-600 hover:text-blue-700">
-            ← Back to Project
-          </A>
-          <Show when={view()}>
-            <h1 class="text-xl font-semibold">{view()!.title}</h1>
-          </Show>
-        </div>
-        
-        <div class="flex items-center gap-2">
-          <button
-            class="p-2 hover:bg-gray-100 rounded"
-            onClick={() => setShowSidebar(!showSidebar())}
-            title={showSidebar() ? 'Hide sidebar' : 'Show sidebar'}
-          >
-            {showSidebar() ? '◀' : '▶'}
-          </button>
-          
-          <button
-            class="px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm disabled:bg-gray-300"
-            onClick={executeQuery}
-            disabled={isExecuting()}
-          >
-            {isExecuting() ? 'Refreshing...' : 'Refresh'}
-          </button>
+      <PageHeader
+        title={view()?.title || 'View'}
+        backLink={{
+          href: `/projects/${params.projectId}`,
+          label: '← Back to Project'
+        }}
+        actions={
+          <>
+            <button
+              class="p-2 hover:bg-gray-100 rounded"
+              onClick={() => setShowSidebar(!showSidebar())}
+              title={showSidebar() ? 'Hide sidebar' : 'Show sidebar'}
+            >
+              {showSidebar() ? '◀' : '▶'}
+            </button>
+            
+            <Button
+              variant="primary"
+              onClick={executeQuery}
+              disabled={isExecuting()}
+            >
+              {isExecuting() ? 'Refreshing...' : 'Refresh'}
+            </Button>
           
           <div class="flex items-center gap-2">
             <label class="flex items-center gap-2 text-sm">
@@ -382,24 +359,21 @@ const ViewDetail: Component = () => {
               </select>
             </Show>
           </div>
-          
-          <button
-            class="px-3 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-sm disabled:bg-gray-300"
-            onClick={exportToCSV}
-            disabled={!queryResult().rows.length}
-          >
-            Export CSV
-          </button>
-        </div>
-      </header>
+            
+            <Button
+              variant="success"
+              onClick={exportToCSV}
+              disabled={!queryResult().rows.length}
+            >
+              Export CSV
+            </Button>
+          </>
+        }
+      />
       
       <div class="flex-1 flex overflow-hidden">
-        {/* Sidebar with tables, views, functions, layouts */}
         <Show when={showSidebar()}>
-          <div 
-            class="bg-gray-50 border-r overflow-y-auto relative"
-            style={{ width: `${sidebarWidth()}px` }}
-          >
+          <ResizablePanel class="bg-gray-50 border-r">
             <Sidebar
               tables={tables()}
               views={views()}
@@ -414,16 +388,7 @@ const ViewDetail: Component = () => {
               onAddNew={handleAddNew}
               onDelete={handleDelete}
             />
-          </div>
-          
-          {/* Resize handle */}
-          <div
-            class={`w-1 bg-gray-300 hover:bg-blue-500 cursor-col-resize transition-colors ${
-              isResizing() ? 'bg-blue-500' : ''
-            }`}
-            onMouseDown={handleMouseDown}
-            style={{ "user-select": "none" }}
-          />
+          </ResizablePanel>
         </Show>
         
         {/* Main content */}

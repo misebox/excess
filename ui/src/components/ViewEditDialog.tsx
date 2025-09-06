@@ -1,5 +1,6 @@
 import { Component, createSignal, createEffect, For, Show } from 'solid-js'
 import { View, Table } from '../models/types'
+import { CommonDialog, Button } from './common'
 
 interface ViewEditDialogProps {
   view: View | null
@@ -59,15 +60,32 @@ const ViewEditDialog: Component<ViewEditDialogProps> = (props) => {
     }
   }
 
-  return (
-    <Show when={props.isOpen && props.view}>
-      <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div class="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
-          <div class="p-4 border-b">
-            <h2 class="text-xl font-bold">Edit View</h2>
-          </div>
+  const footer = (
+    <div class="flex justify-end gap-2">
+      <Button
+        variant="ghost"
+        onClick={props.onClose}
+      >
+        Cancel
+      </Button>
+      <Button
+        variant="success"
+        onClick={handleSave}
+        disabled={!title().trim()}
+      >
+        Save Changes
+      </Button>
+    </div>
+  )
 
-          <div class="p-4 flex-1 overflow-y-auto">
+  return (
+    <CommonDialog
+      isOpen={props.isOpen && !!props.view}
+      onClose={props.onClose}
+      title="Edit View"
+      maxWidth="max-w-3xl"
+      footer={footer}
+    >
             <div class="mb-4">
               <label class="block text-sm font-medium mb-2">View Name</label>
               <input
@@ -98,14 +116,13 @@ const ViewEditDialog: Component<ViewEditDialogProps> = (props) => {
                         <span class="text-sm">{table.title}</span>
                         <span class="text-xs text-gray-500">({table.rows?.length || 0} rows)</span>
                       </label>
-                      <button
-                        type="button"
-                        class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded ml-2"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => insertTableName(table.title)}
-                        title="Insert table name into query"
                       >
                         Insert
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </For>
@@ -120,13 +137,13 @@ const ViewEditDialog: Component<ViewEditDialogProps> = (props) => {
             <div class="mb-4">
               <div class="flex items-center justify-between mb-2">
                 <label class="block text-sm font-medium">SQL Query</label>
-                <button
-                  type="button"
-                  class="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={generateSampleQuery}
                 >
                   Generate Sample
-                </button>
+                </Button>
               </div>
               <textarea
                 class="w-full h-48 px-3 py-2 border rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-green-500"
@@ -150,26 +167,7 @@ const ViewEditDialog: Component<ViewEditDialogProps> = (props) => {
                 </details>
               </div>
             </div>
-          </div>
-
-          <div class="p-4 border-t flex justify-end gap-2">
-            <button
-              class="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
-              onClick={props.onClose}
-            >
-              Cancel
-            </button>
-            <button
-              class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300"
-              onClick={handleSave}
-              disabled={!title().trim()}
-            >
-              Save Changes
-            </button>
-          </div>
-        </div>
-      </div>
-    </Show>
+    </CommonDialog>
   )
 }
 

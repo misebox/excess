@@ -1,5 +1,6 @@
 import { Component, For, Show, createSignal } from 'solid-js'
 import { LayoutElement } from '@/models/types'
+import { Button } from '@/components/common'
 
 interface LayoutSidebarProps {
   elements: LayoutElement[]
@@ -98,15 +99,16 @@ const LayoutSidebar: Component<LayoutSidebarProps> = (props) => {
   return (
     <div class="h-full flex flex-col bg-gray-50 border-r">
       <div class="p-3 border-b bg-white">
-        <button
-          class="w-full flex items-center justify-between text-sm font-medium"
+        <Button
+          variant="ghost"
+          class="w-full justify-between"
           onClick={() => setIsExpanded(!isExpanded())}
         >
           <span class="flex items-center gap-2">
             <span class={`transition-transform ${isExpanded() ? 'rotate-90' : ''}`}>▶</span>
             Layout Elements ({props.elements.length})
           </span>
-        </button>
+        </Button>
       </div>
       
       <Show when={isExpanded()}>
@@ -141,27 +143,29 @@ const LayoutSidebar: Component<LayoutSidebarProps> = (props) => {
                   
                   <div class="opacity-0 group-hover:opacity-100 flex items-center gap-1">
                     <Show when={props.onToggleVisibility}>
-                      <button
-                        class="p-1 hover:bg-gray-200 rounded"
-                        onClick={(e) => {
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        class="p-1"
+                        onClick={(e: MouseEvent) => {
                           e.stopPropagation()
                           props.onToggleVisibility?.(element.id)
                         }}
-                        title="Toggle visibility"
                       >
                         👁️
-                      </button>
+                      </Button>
                     </Show>
-                    <button
-                      class="p-1 hover:bg-red-100 text-red-500 rounded"
-                      onClick={(e) => {
+                    <Button
+                      variant="danger"
+                      size="sm"
+                      class="p-1"
+                      onClick={(e: MouseEvent) => {
                         e.stopPropagation()
                         props.onDeleteElement(element.id)
                       }}
-                      title="Delete"
                     >
                       ×
-                    </button>
+                    </Button>
                   </div>
                 </div>
               )}
