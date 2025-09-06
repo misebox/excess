@@ -32,6 +32,8 @@ export interface Table {
   primaryKey?: string[]  // column names for composite primary key
   uniqueConstraints?: Index[]
   indexes?: Index[]
+  createdAt: Date,
+  updatedAt: Date,
 }
 
 export interface View {
@@ -128,6 +130,9 @@ export interface TextElementSettings {
   fontWeight?: string
   textAlign?: 'left' | 'center' | 'right'
   color?: string
+  backgroundColor?: string
+  padding?: number
+  fontFamily?: string
 }
 
 export type TabType = 'table' | 'view' | 'function' | 'layout'

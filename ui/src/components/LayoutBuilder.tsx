@@ -3,8 +3,10 @@ import { Layout, LayoutElement, Table, TableViewSettings, View, ChartSettings, T
 import TableView from './TableView'
 import TableViewSettingsDialog from './TableViewSettings'
 import TextElement from './TextElement'
+import TextElementSettingsDialog from './TextElementSettings'
 import ChartElement from './ChartElement'
 import ChartSettingsDialog from './ChartSettings'
+import LayoutSidebar from './LayoutSidebar'
 
 interface LayoutBuilderProps {
   layout: Layout
@@ -30,7 +32,10 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
   const [settingsElement, setSettingsElement] = createSignal<LayoutElement | null>(null)
   const [settingsTable, setSettingsTable] = createSignal<Table | null>(null)
   const [chartSettingsElement, setChartSettingsElement] = createSignal<LayoutElement | null>(null)
+  const [textSettingsElement, setTextSettingsElement] = createSignal<LayoutElement | null>(null)
   const [contextMenu, setContextMenu] = createSignal<{x: number, y: number, elementId: string} | null>(null)
+  const [selectedElementId, setSelectedElementId] = createSignal<string | null>(null)
+  const [showSidebar, setShowSidebar] = createSignal(true)
   
   let containerRef: HTMLDivElement | undefined
 
@@ -120,19 +125,19 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
       const x = e.clientX - rect.left - dragOffset().x
       const y = e.clientY - rect.top - dragOffset().y
       
-      const col = Math.max(0, Math.min(GRID_COLS - 1, Math.floor(x / GRID_SIZE)))
-      const row = Math.max(0, Math.min(GRID_ROWS - 1, Math.floor(y / GRID_SIZE)))
-      
       const element = props.layout.elements.find(el => el.id === dragId)
       if (element) {
         const maxCol = GRID_COLS - element.gridSize.cols
         const maxRow = GRID_ROWS - element.gridSize.rows
         
+        const col = Math.max(0, Math.min(maxCol, Math.floor(x / GRID_SIZE)))
+        const row = Math.max(0, Math.min(maxRow, Math.floor(y / GRID_SIZE)))
+        
         props.onUpdate({
           ...props.layout,
           elements: props.layout.elements.map(el =>
             el.id === dragId
-              ? { ...el, gridPosition: { col: Math.min(col, maxCol), row: Math.min(row, maxRow) } }
+              ? { ...el, gridPosition: { col, row } }
               : el
           )
         })
@@ -297,6 +302,9 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
       console.log('Settings dialog opened, showTableViewSettings:', showTableViewSettings())
     } else if (element.type === 'chart') {
       setChartSettingsElement(element)
+    } else if (element.type === 'text') {
+      console.log('Opening text element settings for:', element)
+      setTextSettingsElement(element)
     }
   }
   
@@ -335,15 +343,20 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
     setChartSettingsElement(null)
   }
   
-  const handleTextUpdate = (elementId: string, content: string) => {
-    props.onUpdate({
-      ...props.layout,
-      elements: props.layout.elements.map(el =>
-        el.id === elementId
-          ? { ...el, data: { ...el.data, content } }
-          : el
-      )
-    })
+  
+  const handleTextSettingsSave = (settings: TextElementSettings) => {
+    const element = textSettingsElement()
+    if (element) {
+      props.onUpdate({
+        ...props.layout,
+        elements: props.layout.elements.map(el =>
+          el.id === element.id
+            ? { ...el, data: settings }
+            : el
+        )
+      })
+    }
+    setTextSettingsElement(null)
   }
 
   const handleTitleSave = () => {
@@ -365,9 +378,47 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
     }
   }
 
+  const handleSelectElement = (elementId: string) => {
+    setSelectedElementId(elementId)
+    // Optionally scroll element into view
+    const element = document.getElementById(`layout-element-${elementId}`)
+    element?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
+  const handleReorderElements = (newElements: LayoutElement[]) => {
+    props.onUpdate({
+      ...props.layout,
+      elements: newElements
+    })
+  }
+
   return (
-    <div class="p-4 h-full flex flex-col">
-      <div class="mb-4">
+    <div class="h-full flex">
+      {/* Sidebar */}
+      <Show when={showSidebar()}>
+        <div class="w-64 h-full">
+          <LayoutSidebar
+            elements={props.layout.elements}
+            selectedElementId={selectedElementId()}
+            onSelectElement={handleSelectElement}
+            onDeleteElement={removeElement}
+            onReorderElements={handleReorderElements}
+          />
+        </div>
+      </Show>
+      
+      {/* Main content */}
+      <div class="flex-1 p-4 h-full flex flex-col overflow-auto">
+        <div class="mb-4 flex items-center justify-between">
+          <button
+            class="p-2 hover:bg-gray-100 rounded"
+            onClick={() => setShowSidebar(!showSidebar())}
+            title={showSidebar() ? 'Hide sidebar' : 'Show sidebar'}
+          >
+            {showSidebar() ? '◀' : '▶'}
+          </button>
+          
+          <div class="flex-1 text-center">
         {isEditingTitle() ? (
           <input
             type="text"
@@ -391,27 +442,10 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
             <span class="ml-2 text-gray-400 text-sm">✏️</span>
           </h2>
         )}
-      </div>
+          </div>
+        </div>
       
       <div class="mb-4 flex gap-2">
-        <button
-          class="px-3 py-1.5 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-          onClick={() => addElement('table')}
-        >
-          + Table
-        </button>
-        <button
-          class="px-3 py-1.5 text-sm bg-green-500 text-white rounded hover:bg-green-600"
-          onClick={() => addElement('view')}
-        >
-          + View
-        </button>
-        <button
-          class="px-3 py-1.5 text-sm bg-purple-500 text-white rounded hover:bg-purple-600"
-          onClick={() => addElement('function')}
-        >
-          + Function
-        </button>
         <button
           class="px-3 py-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
           onClick={() => addElement('text')}
@@ -428,7 +462,7 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
       
       <div 
         ref={containerRef}
-        class={`flex-1 relative bg-white border-2 rounded overflow-auto transition-colors ${
+        class={`relative bg-white border-2 rounded transition-colors ${
           isDragOver() ? 'border-blue-500 bg-blue-50' : 'border-gray-300'
         }`}
         style={{
@@ -437,8 +471,8 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
             linear-gradient(to bottom, ${isDragOver() ? '#dbeafe' : '#e5e7eb'} 1px, transparent 1px)
           `,
           "background-size": `${GRID_SIZE}px ${GRID_SIZE}px`,
-          "min-height": `${GRID_ROWS * GRID_SIZE}px`,
-          "min-width": `${GRID_COLS * GRID_SIZE}px`
+          "height": `${GRID_ROWS * GRID_SIZE}px`,
+          "width": `${GRID_COLS * GRID_SIZE}px`
         }}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -447,9 +481,11 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
         <For each={props.layout.elements}>
           {(element) => (
             <div
+              id={`layout-element-${element.id}`}
               class={`absolute bg-white border-2 rounded shadow-md transition-shadow ${
                 dragging() === element.id ? 'shadow-xl opacity-80' : 'hover:shadow-lg'
-              } ${resizing() === element.id ? 'border-blue-500' : 'border-gray-400'}`}
+              } ${resizing() === element.id ? 'border-blue-500' : 'border-gray-400'}
+              ${selectedElementId() === element.id ? 'ring-2 ring-blue-500' : ''}`}
               style={{
                 left: `${element.gridPosition.col * GRID_SIZE}px`,
                 top: `${element.gridPosition.row * GRID_SIZE}px`,
@@ -487,11 +523,17 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
               ) : element.type === 'text' ? (
                 <TextElement
                   content={element.data?.content || ''}
-                  onUpdate={(content) => handleTextUpdate(element.id, content)}
+                  onSettingsClick={() => {
+                    console.log('TextElement onSettingsClick called for:', element)
+                    openSettings(element)
+                  }}
                   fontSize={element.data?.fontSize}
                   fontWeight={element.data?.fontWeight}
                   textAlign={element.data?.textAlign}
                   color={element.data?.color}
+                  backgroundColor={element.data?.backgroundColor}
+                  padding={element.data?.padding}
+                  fontFamily={element.data?.fontFamily}
                 />
               ) : element.type === 'chart' ? (
                 <Show when={props.tables}>
@@ -514,7 +556,7 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
                       <span class="text-sm font-medium">{getElementDisplayName(element)}</span>
                     </div>
                     <div class="flex gap-1">
-                      <Show when={element.type === 'tableView' || element.type === 'chart'}>
+                      <Show when={element.type === 'tableView' || element.type === 'chart' || element.type === 'text'}>
                         <button
                           class="text-gray-600 hover:text-gray-800 px-1"
                           onClick={(e) => {
@@ -545,7 +587,7 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
               
               {/* Resize handle */}
               <div
-                class="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 rounded-tl cursor-nwse-resize"
+                class="absolute bottom-0 right-0 w-4 h-4 bg-blue-500 rounded-tl cursor-nwse-resize z-20"
                 style={{
                   "clip-path": "polygon(100% 0, 100% 100%, 0 100%)"
                 }}
@@ -580,7 +622,7 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
           >
             <Show when={() => {
               const element = props.layout.elements.find(el => el.id === contextMenu()!.elementId)
-              return element && (element.type === 'tableView' || element.type === 'chart')
+              return element && (element.type === 'tableView' || element.type === 'chart' || element.type === 'text')
             }}>
               <button
                 class="w-full px-4 py-2 text-left hover:bg-gray-100 text-sm flex items-center gap-2"
@@ -657,6 +699,21 @@ const LayoutBuilder: Component<LayoutBuilderProps> = (props) => {
         onClose={() => setChartSettingsElement(null)}
         onSave={handleChartSettingsSave}
       />
+      
+      <Show when={textSettingsElement()}>
+        {() => {
+          console.log('Rendering TextElementSettingsDialog with:', textSettingsElement())
+          return (
+            <TextElementSettingsDialog
+              isOpen={true}
+              settings={textSettingsElement()?.data || null}
+              onClose={() => setTextSettingsElement(null)}
+              onSave={handleTextSettingsSave}
+            />
+          )
+        }}
+      </Show>
+      </div>
     </div>
   )
 }
