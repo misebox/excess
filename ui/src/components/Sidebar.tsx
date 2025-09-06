@@ -13,6 +13,7 @@ interface SidebarProps {
   onSelect: (id: string, type: 'table' | 'view' | 'function' | 'layout') => void
   onRename: (id: string, type: 'table' | 'view' | 'function' | 'layout', newName: string) => void
   onUpdateTable?: (table: Table) => void
+  onEditView?: (view: View) => void
   onAddNew?: (type: 'table' | 'view' | 'function' | 'layout') => void
   onDelete?: (id: string, type: 'table' | 'view' | 'function' | 'layout') => void
 }
@@ -92,6 +93,18 @@ const Sidebar: Component<SidebarProps> = (props) => {
               setEditingTable(item as Table)
             }}
             title="Edit table structure"
+          >
+            Edit
+          </button>
+        )}
+        {type === 'view' && (
+          <button
+            class="px-2 py-0.5 text-xs bg-white hover:bg-green-50 border border-gray-300 hover:border-green-400 text-gray-600 hover:text-green-600 rounded transition-all duration-150 active:scale-95 cursor-pointer flex-shrink-0"
+            onClick={(e) => {
+              e.stopPropagation()
+              props.onEditView?.(item as View)
+            }}
+            title="Edit view query"
           >
             Edit
           </button>

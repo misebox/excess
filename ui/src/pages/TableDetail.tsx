@@ -2,6 +2,8 @@ import { Component, createSignal, onMount, Show, createEffect } from 'solid-js'
 import { useParams, useNavigate, A } from '@solidjs/router'
 import TableEditor from '@/components/TableEditor'
 import Sidebar from '@/components/Sidebar'
+import TableCreateDialog from '@/components/TableCreateDialog'
+import ViewCreationDialog from '@/components/ViewCreationDialog'
 import { Table, View, AppFunction, Layout } from '@/models/types'
 
 const TableDetail: Component = () => {
@@ -18,10 +20,16 @@ const TableDetail: Component = () => {
   const [error, setError] = createSignal<string | null>(null)
   const [sidebarWidth, setSidebarWidth] = createSignal(256)
   const [isResizing, setIsResizing] = createSignal(false)
+  const [showCreateTableDialog, setShowCreateTableDialog] = createSignal(false)
+  const [showCreateViewDialog, setShowCreateViewDialog] = createSignal(false)
 
-  onMount(() => {
+  // onMount(() => {
+  //   loadTableData()
+  // })
+  createEffect(() => {
+    console.log("id が変わった:", params.tableId);
     loadTableData()
-  })
+  });
 
   const loadTableData = () => {
     try {
@@ -139,8 +147,43 @@ const TableDetail: Component = () => {
   }
 
   const handleAddNew = (type: 'table' | 'view' | 'function' | 'layout') => {
-    // Navigate to project page to add new
-    navigate(`/projects/${params.projectId}`)
+    switch (type) {
+      case 'table':
+        setShowCreateTableDialog(true)
+        break
+      case 'view':
+        setShowCreateViewDialog(true)
+        break
+      case 'function':
+      case 'layout':
+        // For function and layout, navigate to project page
+        navigate(`/projects/${params.projectId}`)
+        break
+    }
+  }
+  
+  const handleCreateTable = (tableData: Omit<Table, 'id'>) => {
+    const id = `table_${Date.now()}`
+    const newTable: Table = {
+      ...tableData,
+      id,
+      projectId: params.projectId
+    }
+    setTables(prev => [...prev, newTable])
+    // Navigate to the new table
+    navigate(`/projects/${params.projectId}/tables/${id}`)
+  }
+  
+  const handleCreateView = (viewData: Omit<View, 'id'>) => {
+    const id = `view_${Date.now()}`
+    const newView: View = {
+      ...viewData,
+      id,
+      projectId: params.projectId
+    }
+    setViews(prev => [...prev, newView])
+    // Navigate to the new view
+    navigate(`/projects/${params.projectId}/views/${id}`)
   }
 
   // Auto-save project data whenever it changes
@@ -218,6 +261,21 @@ const TableDetail: Component = () => {
           </Show>
         </main>
       </div>
+      
+      {/* Table Create Dialog */}
+      <TableCreateDialog
+        isOpen={showCreateTableDialog()}
+        onClose={() => setShowCreateTableDialog(false)}
+        onSave={handleCreateTable}
+      />
+      
+      {/* View Creation Dialog */}
+      <ViewCreationDialog
+        isOpen={showCreateViewDialog()}
+        tables={tables()}
+        onClose={() => setShowCreateViewDialog(false)}
+        onSave={handleCreateView}
+      />
     </div>
   )
 }

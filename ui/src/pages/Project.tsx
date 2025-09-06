@@ -1,12 +1,13 @@
-import { Component, createSignal, Show, onMount, createEffect } from 'solid-js'
+import { Component, createSignal, Show, onMount, createEffect, Switch, Match, createMemo } from 'solid-js'
 import { useParams, A, useNavigate } from '@solidjs/router'
 import Sidebar from '../components/Sidebar'
 import TableEditor from '../components/TableEditor'
 import TableCreateDialog from '../components/TableCreateDialog'
-import ViewEditor from '../components/ViewEditor'
+import ViewCreationDialog from '../components/ViewCreationDialog'
+import ViewEditDialog from '../components/ViewEditDialog'
 import FunctionEditor from '../components/FunctionEditor'
 import LayoutBuilder from '../components/LayoutBuilder'
-import { Table, View, AppFunction, Layout } from '@/models/types'
+import { Table, View, AppFunction, Layout, Column } from '@/models/types'
 
 interface ProjectData {
   id: string
@@ -33,14 +34,16 @@ const Project: Component = () => {
   const [activeId, setActiveId] = createSignal<string | null>(null)
   const [activeType, setActiveType] = createSignal<'table' | 'view' | 'function' | 'layout' | null>(null)
   
-  // State for create dialog
+  // State for create dialogs
   const [showCreateTableDialog, setShowCreateTableDialog] = createSignal(false)
+  const [showCreateViewDialog, setShowCreateViewDialog] = createSignal(false)
+  const [editingView, setEditingView] = createSignal<View | null>(null)
   
   // State for sidebar width
   const [sidebarWidth, setSidebarWidth] = createSignal(256) // 16rem = 256px
   const [isResizing, setIsResizing] = createSignal(false)
   
-  // Load project data on mount
+  // Load project data on mount and handle URL parameters
   onMount(() => {
     // Load project metadata
     const stored = localStorage.getItem('excess-projects')
@@ -80,6 +83,7 @@ const Project: Component = () => {
         setActiveType('layout')
       }
     }
+    
   })
   
   // Auto-save project data whenever it changes
@@ -96,17 +100,18 @@ const Project: Component = () => {
   })
   
   const handleSelect = (id: string, type: 'table' | 'view' | 'function' | 'layout') => {
-    console.log('handleSelect called:', { id, type, tables: tables() })
-    
-    // Navigate to dedicated table detail page for tables
-    if (type === 'table') {
-      navigate(`/projects/${params.projectId}/tables/${id}`)
-    } else {
-      setActiveId(id)
-      setActiveType(type)
-      // Update URL for other types
-      navigate(`/projects/${params.projectId}/${type}s/${id}`, { replace: true })
+    // Navigate to ViewDetail page for views
+    if (type === 'view') {
+      navigate(`/projects/${params.projectId}/views/${id}`)
+      return
     }
+    
+    // Set active item for all other types
+    setActiveId(id)
+    setActiveType(type)
+    
+    // Update URL
+    navigate(`/projects/${params.projectId}/${type}s/${id}`, { replace: true })
   }
   
   const handleRename = (id: string, type: 'table' | 'view' | 'function' | 'layout', newName: string) => {
@@ -116,6 +121,10 @@ const Project: Component = () => {
   
   const handleUpdateTable = (updatedTable: Table) => {
     setTables(prev => prev.map(t => t.id === updatedTable.id ? updatedTable : t))
+  }
+  
+  const handleEditView = (view: View) => {
+    setEditingView(view)
   }
   
   const handleUpdateView = (updatedView: View) => {
@@ -158,14 +167,34 @@ const Project: Component = () => {
     }
   }
   
-  const getActiveTable = () => {
-    const active = tables().find(t => t.id === activeId())
-    console.log('getActiveTable:', { activeId: activeId(), active, tables: tables() })
-    return active
-  }
-  const getActiveView = () => views().find(v => v.id === activeId())
-  const getActiveFunction = () => functions().find(f => f.id === activeId())
-  const getActiveLayout = () => layouts().find(l => l.id === activeId())
+  // Use createMemo to ensure reactive tracking
+  const getActiveTable = createMemo(() => {
+    const id = activeId()
+    const type = activeType()
+    if (type !== 'table' || !id) return null
+    return tables().find(t => t.id === id)
+  })
+  
+  const getActiveView = createMemo(() => {
+    const id = activeId()
+    const type = activeType()
+    if (type !== 'view' || !id) return null
+    return views().find(v => v.id === id)
+  })
+  
+  const getActiveFunction = createMemo(() => {
+    const id = activeId()
+    const type = activeType()
+    if (type !== 'function' || !id) return null
+    return functions().find(f => f.id === id)
+  })
+  
+  const getActiveLayout = createMemo(() => {
+    const id = activeId()
+    const type = activeType()
+    if (type !== 'layout' || !id) return null
+    return layouts().find(l => l.id === id)
+  })
   
   // Import CSV to create new table
   const handleImportCSV = async () => {
@@ -191,7 +220,7 @@ const Project: Component = () => {
         name: name || `column_${i + 1}`,
         type: 'string' as const,  // Default to string type
         nullable: true
-      }))
+      } as Column))
       
       // Parse rows
       const rows = lines.slice(1).map(line => {
@@ -236,11 +265,11 @@ const Project: Component = () => {
         columns,
         rows,
         primaryKey: [],
-        foreignKeys: [],
         uniqueConstraints: [],
         indexes: [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        projectId: params.projectId
       }
       
       setTables(prev => [...prev, newTable])
@@ -260,6 +289,20 @@ const Project: Component = () => {
     }
     setTables(prev => [...prev, newTable])
     handleSelect(id, 'table')
+  }
+  
+  // Handle creating a new view from dialog
+  const handleCreateView = (viewData: Omit<View, 'id'>) => {
+    const id = `view_${Date.now()}`
+    const newView: View = {
+      ...viewData,
+      id,
+      projectId: params.projectId
+    }
+    setViews(prev => [...prev, newView])
+    
+    // Navigate to the view detail page
+    navigate(`/projects/${params.projectId}/views/${id}`)
   }
   
   // Handle sidebar resize
@@ -295,15 +338,8 @@ const Project: Component = () => {
         break
         
       case 'view':
-        const newView: View = {
-          id,
-          projectId: params.projectId,
-          title: `New View`,
-          query: '',
-          sourceTables: []
-        }
-        setViews(prev => [...prev, newView])
-        handleSelect(id, 'view')
+        // Show the create view dialog instead of creating directly
+        setShowCreateViewDialog(true)
         break
         
       case 'function':
@@ -368,6 +404,7 @@ const Project: Component = () => {
             onSelect={handleSelect}
             onRename={handleRename}
             onUpdateTable={handleUpdateTable}
+            onEditView={handleEditView}
             onAddNew={handleAddNew}
             onDelete={handleDelete}
           />
@@ -383,20 +420,14 @@ const Project: Component = () => {
         />
         
         <main class="flex-1 overflow-auto bg-white">
-          <Show when={activeType() === 'table' && getActiveTable()}>
-            {(table) => <TableEditor table={table()} onUpdate={handleUpdateTable} />}
+          <Show when={getActiveTable()} keyed>
+            {(table) => <TableEditor table={table} onUpdate={handleUpdateTable} />}
           </Show>
-          
-          <Show when={activeType() === 'view' && getActiveView()}>
-            {(view) => <ViewEditor view={view()} tables={tables()} onUpdate={handleUpdateView} />}
+          <Show when={getActiveFunction()} keyed>
+            {(func) => <FunctionEditor function={func} onUpdate={handleUpdateFunction} />}
           </Show>
-          
-          <Show when={activeType() === 'function' && getActiveFunction()}>
-            {(func) => <FunctionEditor function={func()} onUpdate={handleUpdateFunction} />}
-          </Show>
-          
-          <Show when={activeType() === 'layout' && getActiveLayout()}>
-            {(layout) => <LayoutBuilder layout={layout()} onUpdate={handleUpdateLayout} tables={tables()} />}
+          <Show when={getActiveLayout()} keyed>
+            {(layout) => <LayoutBuilder layout={layout} onUpdate={handleUpdateLayout} tables={tables()} />}
           </Show>
           
           <Show when={!activeId()}>
@@ -428,6 +459,26 @@ const Project: Component = () => {
         isOpen={showCreateTableDialog()}
         onClose={() => setShowCreateTableDialog(false)}
         onSave={handleCreateTable}
+      />
+      
+      {/* View Creation Dialog */}
+      <ViewCreationDialog
+        isOpen={showCreateViewDialog()}
+        tables={tables()}
+        onClose={() => setShowCreateViewDialog(false)}
+        onSave={handleCreateView}
+      />
+      
+      {/* View Edit Dialog */}
+      <ViewEditDialog
+        view={editingView()}
+        tables={tables()}
+        isOpen={editingView() !== null}
+        onClose={() => setEditingView(null)}
+        onSave={(updatedView) => {
+          handleUpdateView(updatedView)
+          setEditingView(null)
+        }}
       />
     </div>
   )

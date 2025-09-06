@@ -3,6 +3,7 @@ import { Router, Route, Navigate, useLocation } from '@solidjs/router'
 import Home from './pages/Home'
 import Project from './pages/Project'
 import TableDetail from './pages/TableDetail'
+import ViewDetail from './pages/ViewDetail'
 
 const withRouteLogger = (Component: any) => {
   return (props: any) => {
@@ -28,7 +29,7 @@ const App: Component = () => {
       <Route path="/" component={withRouteLogger(Home)} />
       <Route path="/projects/:projectId" component={withRouteLogger(Project)} />
       <Route path="/projects/:projectId/tables/:tableId" component={withRouteLogger(TableDetail)} />
-      <Route path="/projects/:projectId/views/:viewId" component={withRouteLogger(Project)} />
+      <Route path="/projects/:projectId/views/:viewId" component={withRouteLogger(ViewDetail)} />
       <Route path="/projects/:projectId/functions/:functionId" component={withRouteLogger(Project)} />
       <Route path="/projects/:projectId/layouts/:layoutId" component={withRouteLogger(Project)} />
       <Route path="*" component={() => <Navigate href="/" />} />
